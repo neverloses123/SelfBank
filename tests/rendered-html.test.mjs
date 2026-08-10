@@ -52,13 +52,14 @@ test("固定扣款保留，外部帳號連動已移除", async () => {
   assert.doesNotMatch(page, /setModal\("accounts"\)|Google 帳號|Apple／iCloud 帳號/);
 });
 
-test("v1 包含本機保存、CSV 與台北富邦 PDF 匯入", async () => {
+test("v1 只保留 PDF 匯入並提供 PDF 匯出", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.match(page, /localStorage\.setItem\("selfbank-v1-transactions"/);
-  assert.match(page, /reader\.readAsText\(file\)/);
   for (const field of ["帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註"]) assert.match(page, new RegExp(field));
-  assert.match(page, /台北富邦交易明細 PDF/);
-  assert.match(page, /type: type === "income"/);
+  assert.match(page, /PDF 檔案/);
+  assert.match(page, /匯出 PDF/);
+  assert.match(page, /exports\/pdf/);
+  assert.doesNotMatch(page, /CSV|台北富邦/);
 });
 
 test("銀行交易會與載具發票去重，且避免誤判", () => {

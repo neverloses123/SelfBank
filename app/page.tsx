@@ -1,7 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { isDuplicateTransaction } from "../lib/dedupe";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Tx = { id: number; title: string; category: string; amount: number; date: string; type: "expense" | "income"; source: string; transaction_time?: string | null; summary?: string | null; expense_amount?: number | null; income_amount?: number | null; balance?: number | null; note?: string | null };
 type Recurring = { id: number; title: string; amount: number; day: number; category: string; type: "expense" | "income"; active: boolean };
@@ -46,9 +45,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   const [categoryFilter, setCategoryFilter] = useState("全部分類");
   const [recurringFilter, setRecurringFilter] = useState<"all" | "expense" | "income">("all");
   const [loaded, setLoaded] = useState(false);
-  const [importType, setImportType] = useState<"csv" | "pdf">("csv");
   const [pdfBusy, setPdfBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("selfbank-v1-transactions");
@@ -114,37 +111,6 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     setModal(null); setToast("交易已新增"); setTimeout(() => setToast(""), 2500);
   }
 
-  function importCsv(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      if (pythonApiUrl) {
-        const response = await fetch(`${pythonApiUrl}/imports/csv`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: String(reader.result) }) });
-        const result = await response.json();
-        if (!response.ok) { setToast(result.detail || "CSV 匯入失敗"); return; }
-        setTxs(prev => [...result.created, ...prev]); setModal(null);
-        setToast(`已新增 ${result.created_count} 筆，略過 ${result.skipped_count} 筆重複消費`); setTimeout(() => setToast(""), 3500); return;
-      }
-      const lines = String(reader.result).split(/\r?\n/).slice(1).filter(Boolean);
-      const parsed = lines.map((line, i) => {
-        const [date, title, amount, type = "expense", category = "其他"] = line.split(",").map(v => v.trim());
-        return { id: Date.now() + i, date, title, amount: Math.abs(Number(amount)), type: type === "income" ? "income" as const : "expense" as const, category, source: "CSV 匯入" };
-      }).filter(t => t.date && t.title && Number.isFinite(t.amount));
-      const accepted: Tx[] = [];
-      let duplicateCount = 0;
-      for (const candidate of parsed) {
-        const duplicate = [...txs, ...accepted].some(existing => isDuplicateTransaction(candidate, existing));
-        if (duplicate) duplicateCount += 1;
-        else accepted.push(candidate);
-      }
-      setTxs(prev => [...accepted, ...prev]);
-      setModal(null);
-      setToast(`已新增 ${accepted.length} 筆，略過 ${duplicateCount} 筆重複消費`);
-      setTimeout(() => setToast(""), 3500);
-    };
-    reader.readAsText(file);
-  }
-
   async function importPdf(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -178,6 +144,20 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     } finally {
       setPdfBusy(false);
     }
+  }
+
+  async function exportPdf() {
+    if (!pythonApiUrl) { setToast("請先啟動本機 Python API，才能匯出 PDF"); setTimeout(() => setToast(""), 3000); return; }
+    try {
+      const response = await fetch(`${pythonApiUrl}/exports/pdf`);
+      if (!response.ok) throw new Error("PDF 匯出失敗");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `SelfBank-交易紀錄-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+      setToast("交易紀錄 PDF 已匯出"); setTimeout(() => setToast(""), 2500);
+    } catch { setToast("PDF 匯出失敗，請確認本機 API 已啟動"); setTimeout(() => setToast(""), 3000); }
   }
 
   async function addRecurring(e: FormEvent<HTMLFormElement>) {
@@ -245,7 +225,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
         <p className="recurring-hint">固定收支用於預估；匯入銀行紀錄時仍會套用防重複規則，以實際入帳為準。</p>
       </section>}
 
-      {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div>
+      {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><div className="ledger-actions"><button className="secondary compact" onClick={exportPdf} aria-label="匯出交易紀錄 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></div>
         <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
         <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
         <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>帳務日期</th><th>交易時間</th><th>摘要</th><th>支出金額</th><th>存入金額</th><th>即時餘額</th><th>附註</th></tr></thead><tbody>{shown.map(t=><tr key={t.id}><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.transaction_time || "—"}</td><td><b>{t.summary || t.title}</b><small>{t.category} · {t.source}</small></td><td className="expense-cell">{t.type === "expense" ? money(t.expense_amount ?? t.amount) : "—"}</td><td className="income-cell">{t.type === "income" ? money(t.income_amount ?? t.amount) : "—"}</td><td>{t.balance == null ? "—" : money(t.balance)}</td><td>{t.note || (t.summary ? t.title : "—")}</td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
@@ -255,7 +235,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
 
     {modal && <div className="overlay"><button className="backdrop" onClick={()=>setModal(null)} aria-label="關閉視窗" /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={()=>setModal(null)} aria-label="關閉"><Icon name="close" /></button>
       {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><button className="primary submit" type="submit">儲存交易</button></form></>}
-      {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行紀錄</h2><div className="import-tabs"><button className={importType === "csv" ? "selected" : ""} onClick={() => setImportType("csv")}>CSV</button><button className={importType === "pdf" ? "selected" : ""} onClick={() => setImportType("pdf")}>台北富邦加密 PDF</button></div><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對日期、金額與交易內容，已匯入的紀錄不會重複新增。</span></div>{importType === "csv" ? <><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類；類型請填 expense 或 income。</p><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></> : <form onSubmit={importPdf}><label>台北富邦交易明細 PDF<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">支援欄位：帳務日期、交易時間、摘要、支出金額、存入金額、即時餘額、附註。密碼只用於本次解密，不會保存。</p>{!pythonApiUrl && <p className="api-warning">請先啟動本機 Python API，才能解密 PDF 並寫入你的 SQL Server。</p>}<button className="primary submit" type="submit" disabled={!pythonApiUrl || pdfBusy}>{pdfBusy ? "解密與匯入中…" : "匯入 PDF 到交易紀錄"}</button></form>}</>}
+      {modal === "import" && <><p className="eyebrow">PDF 匯入</p><h2 id="modal-title">匯入交易紀錄</h2><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對日期、金額與交易內容，已匯入的紀錄不會重複新增。</span></div><form onSubmit={importPdf}><label>PDF 檔案<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">匯入後會顯示帳務日期、交易時間、摘要、支出金額、存入金額、即時餘額與附註。密碼只用於本次解密，不會保存。</p>{!pythonApiUrl && <p className="api-warning">請先啟動本機 Python API，才能解密 PDF 並寫入你的 SQL Server。</p>}<button className="primary submit" type="submit" disabled={!pythonApiUrl || pdfBusy}>{pdfBusy ? "解密與匯入中…" : "匯入 PDF"}</button></form></>}
       {modal === "recurring" && <><p className="eyebrow">每月固定收支</p><h2 id="modal-title">新增固定收入或支出</h2><form onSubmit={addRecurring}><label>類型<select name="type" defaultValue="expense"><option value="expense">固定支出</option><option value="income">固定收入</option></select></label><label>名稱<input name="title" required placeholder="例如：薪資、房租或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月入帳／扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">固定收入會自動歸類為收入；選擇 1–28 日可避免短月份日期不存在。</p><button className="primary submit" type="submit">加入固定收支</button></form></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}

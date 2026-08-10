@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "SelfBank｜我的個人記帳本",
-  description: "支援台北富邦 PDF 匯入、固定收支與財務分析的個人記帳工具。",
+  description: "支援 PDF 匯入匯出、固定收支與財務分析的個人記帳工具。",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

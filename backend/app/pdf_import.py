@@ -75,7 +75,7 @@ def parse_fubon_tables(tables: list[list[list[Any]]]) -> list[dict[str, Any]]:
                     "amount": expense if is_expense else income,
                     "date": datetime.strptime(raw_date, "%Y/%m/%d").date().isoformat(),
                     "type": "expense" if is_expense else "income",
-                    "source": "台北富邦 PDF 匯入",
+                    "source": "PDF 匯入",
                     "transaction_time": transaction_time,
                     "summary": summary,
                     "expense_amount": expense,
@@ -117,5 +117,5 @@ def parse_statement_text(text: str) -> list[dict[str, Any]]:
             }
         )
     if not transactions:
-        raise ValueError("找不到可匯入的交易列；目前支援台北富邦交易明細及『日期 名稱 金額』文字格式")
+        raise ValueError("找不到可匯入的交易列；請確認 PDF 內含可選取的交易明細文字與表格")
     return transactions

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import io
 import sqlite3
 from contextlib import contextmanager
 from datetime import date
@@ -93,24 +91,6 @@ class Database:
                 (cursor.lastrowid,),
             ).fetchone()
         return dict(row)
-
-    def import_csv(self, content: str) -> dict[str, Any]:
-        reader = csv.DictReader(io.StringIO(content))
-        candidates: list[dict[str, Any]] = []
-        for row in reader:
-            candidate = {
-                "title": (row.get("title") or row.get("名稱") or "").strip(),
-                "category": (row.get("category") or row.get("分類") or "其他").strip(),
-                "amount": abs(float(row.get("amount") or row.get("金額") or 0)),
-                "date": (row.get("date") or row.get("日期") or "").strip(),
-                "type": (row.get("type") or row.get("類型") or "expense").strip(),
-                "source": "CSV 匯入",
-            }
-            date.fromisoformat(candidate["date"])
-            if not candidate["title"] or candidate["type"] not in {"expense", "income"}:
-                raise ValueError("CSV contains an invalid title or type")
-            candidates.append(candidate)
-        return self.import_transactions(candidates)
 
     def import_transactions(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         existing = self.list_transactions(limit=10_000)

@@ -3,15 +3,18 @@ from __future__ import annotations
 import base64
 import binascii
 import os
+import io
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, SecretStr
 
 from .database import Database
 from .pdf_import import PdfPasswordError, parse_statement_pdf
+from .pdf_export import build_transactions_pdf
 
 
 class TransactionInput(BaseModel):
@@ -36,10 +39,6 @@ class RecurringInput(BaseModel):
     day: int = Field(ge=1, le=28)
     type: Literal["expense", "income"] = "expense"
     active: bool = True
-
-
-class CsvImportInput(BaseModel):
-    content: str = Field(min_length=1, max_length=5_000_000)
 
 
 class PdfImportInput(BaseModel):
@@ -80,14 +79,6 @@ def create_transaction(payload: TransactionInput) -> dict:
     return database.create_transaction(payload.model_dump())
 
 
-@app.post("/imports/csv")
-def import_csv(payload: CsvImportInput) -> dict:
-    try:
-        return database.import_csv(payload.content)
-    except (ValueError, KeyError) as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-
-
 @app.post("/imports/pdf")
 def import_pdf(payload: PdfImportInput) -> dict:
     if not payload.filename.lower().endswith(".pdf"):
@@ -100,6 +91,15 @@ def import_pdf(payload: PdfImportInput) -> dict:
         raise HTTPException(status_code=401, detail=str(error)) from error
     except (ValueError, binascii.Error) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/exports/pdf")
+def export_pdf() -> StreamingResponse:
+    content = build_transactions_pdf(database.list_transactions(limit=10_000))
+    return StreamingResponse(
+        io.BytesIO(content), media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="selfbank-transactions.pdf"'},
+    )
 
 
 @app.get("/recurring")
