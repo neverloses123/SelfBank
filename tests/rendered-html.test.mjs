@@ -16,7 +16,7 @@ test("SelfBank 首頁可由伺服器正常輸出", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>SelfBank｜我的個人記帳本<\/title>/i);
-  for (const text of ["SelfBank", "新增交易", "資料匯入", "所有支出與收入", "類型", "名稱", "金額", "日期", "分類", "財務分析", "固定收支"]) assert.match(html, new RegExp(text));
+  for (const text of ["SelfBank", "新增交易", "資料匯入", "所有支出與收入", "財務分析", "固定收支", "沒有符合條件的交易"]) assert.match(html, new RegExp(text));
   assert.doesNotMatch(html, /手機載具/);
   assert.doesNotMatch(html, /本月財務異常|最近 7 天|每月固定收入/);
   assert.doesNotMatch(html, /Google 與 Apple 帳號|連結帳號|Apple／iCloud 帳號/);
@@ -44,7 +44,7 @@ test("交易紀錄支援收支與分類交叉篩選", async () => {
 
 test("固定扣款保留，外部帳號連動已移除", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /selfbank-v1-recurring/);
+  assert.match(page, /setRecurring/);
   assert.match(page, /每月固定支出/);
   assert.match(page, /每月固定收入/);
   assert.match(page, /recurringFilter/);
@@ -54,7 +54,10 @@ test("固定扣款保留，外部帳號連動已移除", async () => {
 
 test("v1 只保留 PDF 匯入並提供 PDF 匯出", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /localStorage\.setItem\("selfbank-v1-transactions"/);
+  assert.doesNotMatch(page, /localStorage|const seed|recurringSeed/);
+  assert.match(page, /\/health/);
+  assert.match(page, /health\.backend !== "sqlserver"/);
+  assert.match(page, /health\.database !== "HomeAccounting"/);
   for (const field of ["類型", "名稱", "金額", "日期", "分類"]) assert.match(page, new RegExp(field));
   for (const category of ["餐飲", "日用品", "娛樂", "交通", "股票", "醫療"]) assert.match(page, new RegExp(category));
   assert.match(page, /"收入" : "支出"/);

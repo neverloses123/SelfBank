@@ -5,26 +5,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Tx = { id: number; title: string; category: string; amount: number; date: string; type: "expense" | "income"; source: string; transaction_time?: string | null; summary?: string | null; expense_amount?: number | null; income_amount?: number | null; balance?: number | null; note?: string | null };
 type Recurring = { id: number; title: string; amount: number; day: number; category: string; type: "expense" | "income"; active: boolean };
 
-const seed: Tx[] = [
-  { id: 1, title: "全聯福利中心", category: "日用品", amount: 1286, date: "2026-08-10", type: "expense", source: "手動記帳" },
-  { id: 2, title: "台灣高鐵", category: "交通", amount: 1490, date: "2026-08-09", type: "expense", source: "手動記帳" },
-  { id: 3, title: "八月薪資", category: "股票", amount: 62000, date: "2026-08-08", type: "income", source: "銀行匯入" },
-  { id: 4, title: "巷口咖啡", category: "餐飲", amount: 165, date: "2026-08-08", type: "expense", source: "手動記帳" },
-  { id: 5, title: "中華電信", category: "日用品", amount: 899, date: "2026-08-07", type: "expense", source: "銀行匯入" },
-  { id: 6, title: "誠品線上", category: "娛樂", amount: 780, date: "2026-08-06", type: "expense", source: "手動記帳" },
-];
-
 const categories = ["餐飲", "日用品", "娛樂", "交通", "股票", "醫療"];
 const colors: Record<string, string> = { "日用品": "#ff7a59", "交通": "#5b7cfa", "餐飲": "#ffc857", "娛樂": "#37b899", "股票": "#9a72d5", "醫療": "#a5adba" };
 const money = (n: number) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(n);
 const pythonApiUrl = process.env.NEXT_PUBLIC_SELFBANK_API_URL || "";
-const recurringSeed: Recurring[] = [
-  { id: 100, title: "每月薪資", amount: 62000, day: 8, category: "收入", type: "income", active: true },
-  { id: 101, title: "Netflix", amount: 390, day: 16, category: "娛樂", type: "expense", active: true },
-  { id: 102, title: "手機月租", amount: 599, day: 20, category: "帳單", type: "expense", active: true },
-  { id: 103, title: "YouTube Premium", amount: 199, day: 25, category: "娛樂", type: "expense", active: true },
-];
-
 function nextCharge(day: number) {
   const today = new Date();
   const target = new Date(today.getFullYear(), today.getMonth() + (today.getDate() > day ? 1 : 0), day);
@@ -37,39 +21,48 @@ function Icon({ name }: { name: string }) {
 }
 
 export function SelfBankApp({ view = "transactions" }: { view?: "transactions" | "recurring" | "analysis" }) {
-  const [txs, setTxs] = useState<Tx[]>(seed);
-  const [recurring, setRecurring] = useState<Recurring[]>(recurringSeed);
+  const [txs, setTxs] = useState<Tx[]>([]);
+  const [recurring, setRecurring] = useState<Recurring[]>([]);
   const [modal, setModal] = useState<"add" | "import" | "recurring" | null>(null);
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("全部");
   const [categoryFilter, setCategoryFilter] = useState("全部分類");
   const [recurringFilter, setRecurringFilter] = useState<"all" | "expense" | "income">("all");
-  const [loaded, setLoaded] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "api-disconnected" | "database-disconnected">("checking");
 
   useEffect(() => {
-    const saved = localStorage.getItem("selfbank-v1-transactions");
-    const savedRecurring = localStorage.getItem("selfbank-v1-recurring");
-    const timer = window.setTimeout(async () => {
-      if (pythonApiUrl) {
-        try {
-          const [transactionsResponse, recurringResponse] = await Promise.all([
-            fetch(`${pythonApiUrl}/transactions`), fetch(`${pythonApiUrl}/recurring`),
-          ]);
-          if (!transactionsResponse.ok || !recurringResponse.ok) throw new Error("API unavailable");
-          setApiConnected(true);
-          setTxs(await transactionsResponse.json());
-          setRecurring((await recurringResponse.json()).map((item: Recurring) => ({ ...item, type: item.type || "expense" })));
-        } catch { setApiConnected(false); }
-      } else if (saved) { try { setTxs(JSON.parse(saved)); } catch { localStorage.removeItem("selfbank-v1-transactions"); } }
-      if (!pythonApiUrl && savedRecurring) { try { setRecurring(JSON.parse(savedRecurring).map((item: Recurring) => ({ ...item, type: item.type || "expense" }))); } catch { localStorage.removeItem("selfbank-v1-recurring"); } }
-      setLoaded(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
+    let active = true;
+    async function checkConnection() {
+      if (!pythonApiUrl) { setApiConnected(false); setConnectionStatus("api-disconnected"); setTxs([]); setRecurring([]); return; }
+      try {
+        const healthResponse = await fetch(`${pythonApiUrl}/health`, { cache: "no-store" });
+        const health = await healthResponse.json();
+        if (!healthResponse.ok || health.status !== "connected" || health.backend !== "sqlserver" || health.database !== "HomeAccounting") {
+          if (!active) return;
+          setApiConnected(false); setConnectionStatus("database-disconnected"); setTxs([]); setRecurring([]);
+          return;
+        }
+        const [transactionsResponse, recurringResponse] = await Promise.all([fetch(`${pythonApiUrl}/transactions`, { cache: "no-store" }), fetch(`${pythonApiUrl}/recurring`, { cache: "no-store" })]);
+        if (!transactionsResponse.ok || !recurringResponse.ok) {
+          if (!active) return;
+          setApiConnected(false); setConnectionStatus("database-disconnected"); setTxs([]); setRecurring([]);
+          return;
+        }
+        if (!active) return;
+        setTxs(await transactionsResponse.json());
+        setRecurring((await recurringResponse.json()).map((item: Recurring) => ({ ...item, type: item.type || "expense" })));
+        setApiConnected(true); setConnectionStatus("connected");
+      } catch {
+        if (!active) return;
+        setApiConnected(false); setConnectionStatus("api-disconnected"); setTxs([]); setRecurring([]);
+      }
+    }
+    checkConnection();
+    const timer = window.setInterval(checkConnection, 5000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
-  useEffect(() => { if (loaded && !pythonApiUrl) localStorage.setItem("selfbank-v1-transactions", JSON.stringify(txs)); }, [txs, loaded]);
-  useEffect(() => { if (loaded && !pythonApiUrl) localStorage.setItem("selfbank-v1-recurring", JSON.stringify(recurring)); }, [recurring, loaded]);
 
   const stats = useMemo(() => {
     const income = txs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
@@ -103,12 +96,10 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     const fd = new FormData(e.currentTarget);
     const type = fd.get("type") as "expense" | "income";
     const candidate = { title: String(fd.get("title")), category: String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳" };
-    let created: Tx = { id: Date.now(), ...candidate };
-    if (pythonApiUrl) {
-      const response = await fetch(`${pythonApiUrl}/transactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
-      if (!response.ok) { setToast("資料庫寫入失敗"); return; }
-      created = await response.json();
-    }
+    if (!apiConnected) { setToast("SQL Server 未連線，無法新增交易"); return; }
+    const response = await fetch(`${pythonApiUrl}/transactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
+    if (!response.ok) { setToast("資料庫寫入失敗"); return; }
+    const created: Tx = await response.json();
     setTxs([created, ...txs]);
     setModal(null); setToast("交易已新增"); setTimeout(() => setToast(""), 2500);
   }
@@ -119,7 +110,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     const fd = new FormData(form);
     const file = fd.get("pdf") as File;
     const password = String(fd.get("password") || "");
-    if (!pythonApiUrl || !file || !password) return;
+    if (!apiConnected || !file || !password) { setToast("SQL Server 未連線，無法匯入 PDF"); return; }
     setPdfBusy(true);
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -149,7 +140,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   }
 
   async function exportPdf() {
-    if (!pythonApiUrl) { setToast("請先啟動本機 Python API，才能匯出 PDF"); setTimeout(() => setToast(""), 3000); return; }
+    if (!apiConnected) { setToast("SQL Server 未連線，無法匯出 PDF"); setTimeout(() => setToast(""), 3000); return; }
     try {
       const response = await fetch(`${pythonApiUrl}/exports/pdf`);
       if (!response.ok) throw new Error("PDF 匯出失敗");
@@ -167,21 +158,18 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     const fd = new FormData(e.currentTarget);
     const type = fd.get("type") as "expense" | "income";
     const candidate = { title: String(fd.get("title")), amount: Number(fd.get("amount")), day: Number(fd.get("day")), category: type === "income" ? "收入" : String(fd.get("category")), type, active: true };
-    let created: Recurring = { id: Date.now(), ...candidate };
-    if (pythonApiUrl) {
-      const response = await fetch(`${pythonApiUrl}/recurring`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
-      if (!response.ok) { setToast("資料庫寫入失敗"); return; }
-      created = await response.json();
-    }
+    if (!apiConnected) { setToast("SQL Server 未連線，無法新增固定收支"); return; }
+    const response = await fetch(`${pythonApiUrl}/recurring`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
+    if (!response.ok) { setToast("資料庫寫入失敗"); return; }
+    const created: Recurring = await response.json();
     setRecurring(prev => [...prev, created]);
     setModal(null); setToast("固定扣款已加入"); setTimeout(() => setToast(""), 2500);
   }
 
   async function pauseRecurring(item: Recurring) {
-    if (pythonApiUrl) {
-      const response = await fetch(`${pythonApiUrl}/recurring/${item.id}?active=false`, { method: "PATCH" });
-      if (!response.ok) { setToast("資料庫更新失敗"); return; }
-    }
+    if (!apiConnected) { setToast("SQL Server 未連線，無法更新固定收支"); return; }
+    const response = await fetch(`${pythonApiUrl}/recurring/${item.id}?active=false`, { method: "PATCH" });
+    if (!response.ok) { setToast("資料庫更新失敗"); return; }
     setRecurring(prev => prev.map(row => row.id === item.id ? {...row, active:false} : row));
   }
 
@@ -194,7 +182,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
         <a className={`nav ${view === "analysis" ? "active" : ""}`} href="/analysis"><Icon name="home" />財務分析</a>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
-        <div className="privacy"><span>●</span><div><b>{apiConnected ? "已連接本機 SQL Server" : pythonApiUrl ? "本機 API 尚未連線" : "資料僅存在此裝置"}</b><small>{apiConnected ? "交易由本機 Python API 保存" : pythonApiUrl ? "啟動網站服務後會自動重新連線" : "SelfBank 不會上傳你的財務資料"}</small></div></div>
+        <div className="privacy"><span>●</span><div><b>{connectionStatus === "connected" ? "已連接本機 SQL Server" : connectionStatus === "database-disconnected" ? "SQL Server HomeAccounting 未連線" : connectionStatus === "checking" ? "正在檢查本機連線" : "本機 Python API 未連線"}</b><small>{connectionStatus === "connected" ? "API health check 與資料庫查詢皆成功" : connectionStatus === "database-disconnected" ? "API 可連線，但資料庫 health check 失敗" : connectionStatus === "checking" ? "正在執行 API 與資料庫 health check" : "無法連上 localhost:8000"}</small></div></div>
       <div className="profile"><div className="avatar">我</div><div><b>我的帳本</b><small>個人模式</small></div><button aria-label="更多選項">•••</button></div>
     </aside>
 
@@ -237,7 +225,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
 
     {modal && <div className="overlay"><button className="backdrop" onClick={()=>setModal(null)} aria-label="關閉視窗" /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={()=>setModal(null)} aria-label="關閉"><Icon name="close" /></button>
       {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><button className="primary submit" type="submit">儲存交易</button></form></>}
-      {modal === "import" && <><p className="eyebrow">PDF 匯入</p><h2 id="modal-title">匯入交易紀錄</h2><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對日期、金額與交易內容，已匯入的紀錄不會重複新增。</span></div><form onSubmit={importPdf}><label>PDF 檔案<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">匯入後會顯示帳務日期、交易時間、摘要、支出金額、存入金額、即時餘額與附註。密碼只用於本次解密，不會保存。</p>{!pythonApiUrl && <p className="api-warning">請先啟動本機 Python API，才能解密 PDF 並寫入你的 SQL Server。</p>}<button className="primary submit" type="submit" disabled={!pythonApiUrl || pdfBusy}>{pdfBusy ? "解密與匯入中…" : "匯入 PDF"}</button></form></>}
+      {modal === "import" && <><p className="eyebrow">PDF 匯入</p><h2 id="modal-title">匯入交易紀錄</h2><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對日期、金額與交易內容，已匯入的紀錄不會重複新增。</span></div><form onSubmit={importPdf}><label>PDF 檔案<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">匯入後會顯示類型、名稱、金額、日期與分類。密碼只用於本次解密，不會保存。</p>{!apiConnected && <p className="api-warning">本機 API 或 HomeAccounting 資料庫尚未連線。</p>}<button className="primary submit" type="submit" disabled={!apiConnected || pdfBusy}>{pdfBusy ? "解密與匯入中…" : "匯入 PDF"}</button></form></>}
       {modal === "recurring" && <><p className="eyebrow">每月固定收支</p><h2 id="modal-title">新增固定收入或支出</h2><form onSubmit={addRecurring}><label>類型<select name="type" defaultValue="expense"><option value="expense">固定支出</option><option value="income">固定收入</option></select></label><label>名稱<input name="title" required placeholder="例如：薪資、房租或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月入帳／扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">固定收入會自動歸類為收入；選擇 1–28 日可避免短月份日期不存在。</p><button className="primary submit" type="submit">加入固定收支</button></form></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}

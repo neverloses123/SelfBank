@@ -92,6 +92,11 @@ class Database:
             connection.execute("UPDATE transactions SET category = '股票' WHERE category = '收入'")
             connection.execute("PRAGMA optimize")
 
+    def health_check(self) -> dict[str, str]:
+        with self.connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+        return {"status": "connected", "backend": "sqlite", "database": self.path}
+
     def list_transactions(self, limit: int = 200) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute(

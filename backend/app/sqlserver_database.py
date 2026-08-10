@@ -105,6 +105,12 @@ class SqlServerDatabase(Database):
         with self.connect() as connection:
             connection.execute(SCHEMA)
 
+    def health_check(self) -> dict[str, str]:
+        with self.connect() as connection:
+            cursor = connection.execute("SELECT DB_NAME() AS database_name")
+            database_name = str(cursor.fetchone()[0])
+        return {"status": "connected", "backend": "sqlserver", "database": database_name}
+
     def list_transactions(self, limit: int = 200) -> list[dict[str, Any]]:
         with self.connect() as connection:
             cursor = connection.execute(

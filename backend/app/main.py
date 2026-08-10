@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, SecretStr
 
@@ -47,15 +47,20 @@ class PdfImportInput(BaseModel):
     password: SecretStr = Field(min_length=1)
 
 
+database = None
+database_error: str | None = None
 if os.getenv("SELFBANK_DB_BACKEND", "sqlite").lower() == "sqlserver":
     from .sqlserver_database import SqlServerDatabase
 
-    database = SqlServerDatabase(
-        os.getenv(
-            "SELFBANK_SQLSERVER_CONNECTION",
-            "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1433;DATABASE=SelfBank;Trusted_Connection=yes;TrustServerCertificate=yes;",
+    try:
+        database = SqlServerDatabase(
+            os.getenv(
+                "SELFBANK_SQLSERVER_CONNECTION",
+                "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1433;DATABASE=HomeAccounting;Trusted_Connection=yes;Encrypt=no;TrustServerCertificate=yes;",
+            )
         )
-    )
+    except Exception as error:
+        database_error = str(error)
 else:
     database = Database(os.getenv("SELFBANK_DB_PATH", str(Path(__file__).parents[1] / "data" / "selfbank.db")))
 app = FastAPI(title="SelfBank API", version="1.0.0", docs_url="/docs")
@@ -64,29 +69,41 @@ origins = [origin.strip() for origin in os.getenv("SELFBANK_CORS_ORIGINS", "http
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=["GET", "POST", "PATCH"], allow_headers=["Content-Type"])
 
 
+def require_database():
+    if database is None:
+        raise HTTPException(status_code=503, detail="SQL Server 未連線")
+    return database
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health():
+    if database is None:
+        return JSONResponse(status_code=503, content={"status": "disconnected", "database": "HomeAccounting", "detail": database_error or "SQL Server 未連線"})
+    try:
+        result = database.health_check()
+        return {"status": "ok", **result}
+    except Exception as error:
+        return JSONResponse(status_code=503, content={"status": "disconnected", "database": "HomeAccounting", "detail": str(error)})
 
 
 @app.get("/transactions")
 def transactions(limit: int = Query(default=200, ge=1, le=1000)) -> list[dict]:
-    return database.list_transactions(limit)
+    return require_database().list_transactions(limit)
 
 
 @app.get("/categories")
 def categories() -> list[dict]:
-    return database.list_categories()
+    return require_database().list_categories()
 
 
 @app.get("/transaction-types")
 def transaction_types() -> list[dict]:
-    return database.list_transaction_types()
+    return require_database().list_transaction_types()
 
 
 @app.post("/transactions", status_code=201)
 def create_transaction(payload: TransactionInput) -> dict:
-    return database.create_transaction(payload.model_dump())
+    return require_database().create_transaction(payload.model_dump())
 
 
 @app.post("/imports/pdf")
@@ -96,7 +113,7 @@ def import_pdf(payload: PdfImportInput) -> dict:
     try:
         pdf_bytes = base64.b64decode(payload.content_base64, validate=True)
         transactions = parse_statement_pdf(pdf_bytes, payload.password.get_secret_value())
-        return database.import_transactions(transactions)
+        return require_database().import_transactions(transactions)
     except PdfPasswordError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
     except (ValueError, binascii.Error) as error:
@@ -105,7 +122,7 @@ def import_pdf(payload: PdfImportInput) -> dict:
 
 @app.get("/exports/pdf")
 def export_pdf() -> StreamingResponse:
-    content = build_transactions_pdf(database.list_transactions(limit=10_000))
+    content = build_transactions_pdf(require_database().list_transactions(limit=10_000))
     return StreamingResponse(
         io.BytesIO(content), media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="selfbank-transactions.pdf"'},
@@ -114,16 +131,16 @@ def export_pdf() -> StreamingResponse:
 
 @app.get("/recurring")
 def recurring() -> list[dict]:
-    return database.list_recurring()
+    return require_database().list_recurring()
 
 
 @app.post("/recurring", status_code=201)
 def create_recurring(payload: RecurringInput) -> dict:
-    return database.create_recurring(payload.model_dump())
+    return require_database().create_recurring(payload.model_dump())
 
 
 @app.patch("/recurring/{item_id}")
 def update_recurring(item_id: int, active: bool) -> dict[str, bool]:
-    if not database.set_recurring_active(item_id, active):
+    if not require_database().set_recurring_active(item_id, active):
         raise HTTPException(status_code=404, detail="Recurring payment not found")
     return {"updated": True}
