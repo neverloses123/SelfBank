@@ -16,16 +16,16 @@ test("SelfBank 首頁可由伺服器正常輸出", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>SelfBank｜我的個人記帳本<\/title>/i);
-  for (const text of ["SelfBank", "新增交易", "手機載具", "最近交易", "本月預算", "每月固定扣款", "Google 與 Apple 帳號"]) assert.match(html, new RegExp(text));
+  for (const text of ["SelfBank", "新增交易", "手機載具", "最近交易", "本月預算", "每月固定扣款"]) assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /Google 與 Apple 帳號|連結帳號|Apple／iCloud 帳號/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Starter Project/);
 });
 
-test("固定扣款與帳號連結限制已清楚實作", async () => {
+test("固定扣款保留，外部帳號連動已移除", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.match(page, /selfbank-v1-recurring/);
   assert.match(page, /每月固定支出/);
-  assert.match(page, /無法讀取你全部的 App Store 訂閱/);
-  assert.match(page, /Google 需要 OAuth Client ID/);
+  assert.doesNotMatch(page, /setModal\("accounts"\)|Google 帳號|Apple／iCloud 帳號/);
 });
 
 test("v1 包含本機保存、CSV 匯入與載具驗證", async () => {

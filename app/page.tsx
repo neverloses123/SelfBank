@@ -20,7 +20,7 @@ const colors: Record<string, string> = { "日常採買": "#ff7a59", "交通": "#
 const money = (n: number) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(n);
 const recurringSeed: Recurring[] = [
   { id: 101, title: "Netflix", amount: 390, day: 16, category: "娛樂", active: true },
-  { id: 102, title: "iCloud+", amount: 90, day: 20, category: "帳單", active: true },
+  { id: 102, title: "手機月租", amount: 599, day: 20, category: "帳單", active: true },
   { id: 103, title: "YouTube Premium", amount: 199, day: 25, category: "娛樂", active: true },
 ];
 
@@ -38,7 +38,7 @@ function Icon({ name }: { name: string }) {
 export default function Home() {
   const [txs, setTxs] = useState<Tx[]>(seed);
   const [recurring, setRecurring] = useState<Recurring[]>(recurringSeed);
-  const [modal, setModal] = useState<"add" | "carrier" | "import" | "recurring" | "accounts" | null>(null);
+  const [modal, setModal] = useState<"add" | "carrier" | "import" | "recurring" | null>(null);
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("全部");
   const [barcode, setBarcode] = useState("/ABCD123");
@@ -119,7 +119,6 @@ export default function Home() {
         <button className="nav" onClick={() => document.getElementById("budget")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />預算規劃</button>
         <button className="nav" onClick={() => setModal("carrier")}><Icon name="card" />手機載具</button>
         <button className="nav" onClick={() => document.getElementById("recurring")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />固定扣款</button>
-        <button className="nav" onClick={() => setModal("accounts")}><Icon name="sync" />連結帳號</button>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
       <div className="privacy"><span>●</span><div><b>資料僅存在此裝置</b><small>SelfBank 不會上傳你的財務資料</small></div></div>
@@ -147,7 +146,7 @@ export default function Home() {
       </section>
 
       <section className="panel recurring-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定扣款</p><h3>先替未來的支出留位置</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定扣款</button></div>
-        <div className="recurring-summary"><div><span>每月固定支出</span><strong>{money(recurringTotal)}</strong></div><div><span>啟用項目</span><strong>{activeRecurring.length} 筆</strong></div><button className="account-link" onClick={() => setModal("accounts")}><span>G</span><span className="apple-mark">●</span><div><b>Google 與 Apple 帳號</b><small>查看可連結的同步能力</small></div><i>›</i></button></div>
+        <div className="recurring-summary"><div><span>每月固定支出</span><strong>{money(recurringTotal)}</strong></div><div><span>啟用項目</span><strong>{activeRecurring.length} 筆</strong></div></div>
         <div className="recurring-list">{activeRecurring.map(item => <div className="recurring-item" key={item.id}><div className="recurring-logo">{item.title.slice(0,1)}</div><div><b>{item.title}</b><span>{item.category} · 每月 {item.day} 日</span></div><time>下次 {nextCharge(item.day)}</time><strong>{money(item.amount)}</strong><button aria-label={`停用 ${item.title}`} onClick={() => setRecurring(prev => prev.map(row => row.id === item.id ? {...row, active:false} : row))}>暫停</button></div>)}</div>
         <p className="recurring-hint">到期項目會列入預估；銀行 CSV 匯入後仍會使用防重複機制比對實際扣款。</p>
       </section>
@@ -163,7 +162,6 @@ export default function Home() {
       {modal === "carrier" && <><p className="eyebrow">快速出示</p><h2 id="modal-title">設定手機載具</h2><p className="modal-copy">請輸入財政部核發、以「/」開頭的 8 碼手機條碼。條碼只會保存在這個瀏覽器。</p><form onSubmit={e=>{e.preventDefault(); const code=String(new FormData(e.currentTarget).get("barcode")).toUpperCase(); setBarcode(code); localStorage.setItem("selfbank-v1-barcode",code); setModal(null);setToast("載具已更新");setTimeout(()=>setToast(""),2500)}}><label>手機條碼<input name="barcode" required pattern="/[0-9A-Z.+\-]{7}" maxLength={8} defaultValue={barcode} /></label><button className="primary submit">儲存載具</button></form></>}
       {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行 CSV</h2><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類。系統會比對金額、店家與三日內的載具發票，自動略過重複消費；類型請填 expense 或 income。</p><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>同一份 CSV 再次匯入也不會重複新增。</span></div><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></>}
       {modal === "recurring" && <><p className="eyebrow">每月固定扣款</p><h2 id="modal-title">新增固定支出</h2><form onSubmit={addRecurring}><label>名稱<input name="title" required placeholder="例如：網路費或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">選擇 1–28 日可避免短月份日期不存在；之後匯入銀行紀錄時會自動比對，避免重複記帳。</p><button className="primary submit" type="submit">加入固定扣款</button></form></>}
-      {modal === "accounts" && <><p className="eyebrow">帳號與同步</p><h2 id="modal-title">連結你的帳號</h2><p className="modal-copy">SelfBank 不會要求你的 Google 或 Apple 密碼。正式連結必須使用官方授權，並先設定開發者憑證。</p><div className="provider-list"><button disabled><span className="provider-logo google">G</span><div><b>Google 帳號</b><small>可用官方 OAuth 識別帳號；設定憑證後啟用</small></div><em>待設定</em></button><button disabled><span className="provider-logo apple">●</span><div><b>Apple／iCloud 帳號</b><small>可用 Apple 登入；無法讀取你全部的 App Store 訂閱</small></div><em>待設定</em></button></div><div className="account-warning"><b>為什麼現在不能直接登入？</b><span>Google 需要 OAuth Client ID；Apple 網頁登入需要 Apple Developer、Services ID、私鑰與正式網域。Apple 的訂閱 API 只提供開發者自己 App 內的訂閱，不能列出個人 Apple ID 的全部訂閱。</span></div></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </div>;
