@@ -31,7 +31,10 @@ class DatabaseTests(TestCase):
         self.assertEqual(second["skipped_count"], 2)
 
     def test_recurring_payment_lifecycle(self) -> None:
-        item = self.db.create_recurring({"title": "手機月租", "category": "帳單", "amount": 599, "day": 20, "active": True})
+        item = self.db.create_recurring({"title": "手機月租", "category": "帳單", "amount": 599, "day": 20, "type": "expense", "active": True})
+        income = self.db.create_recurring({"title": "每月薪資", "category": "收入", "amount": 62000, "day": 8, "type": "income", "active": True})
+        self.assertEqual(item["type"], "expense")
+        self.assertEqual(income["type"], "income")
         self.assertTrue(item["active"])
         self.assertTrue(self.db.set_recurring_active(item["id"], False))
-        self.assertFalse(self.db.list_recurring()[0]["active"])
+        self.assertTrue(any(not row["active"] for row in self.db.list_recurring()))

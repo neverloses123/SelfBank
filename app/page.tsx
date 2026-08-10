@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "re
 import { isDuplicateTransaction } from "../lib/dedupe";
 
 type Tx = { id: number; title: string; category: string; amount: number; date: string; type: "expense" | "income"; source: string };
-type Recurring = { id: number; title: string; amount: number; day: number; category: string; active: boolean };
+type Recurring = { id: number; title: string; amount: number; day: number; category: string; type: "expense" | "income"; active: boolean };
 
 const seed: Tx[] = [
   { id: 1, title: "全聯福利中心", category: "日常採買", amount: 1286, date: "2026-08-10", type: "expense", source: "雲端發票" },
@@ -20,9 +20,10 @@ const colors: Record<string, string> = { "日常採買": "#ff7a59", "交通": "#
 const money = (n: number) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(n);
 const pythonApiUrl = process.env.NEXT_PUBLIC_SELFBANK_API_URL || "";
 const recurringSeed: Recurring[] = [
-  { id: 101, title: "Netflix", amount: 390, day: 16, category: "娛樂", active: true },
-  { id: 102, title: "手機月租", amount: 599, day: 20, category: "帳單", active: true },
-  { id: 103, title: "YouTube Premium", amount: 199, day: 25, category: "娛樂", active: true },
+  { id: 100, title: "每月薪資", amount: 62000, day: 8, category: "收入", type: "income", active: true },
+  { id: 101, title: "Netflix", amount: 390, day: 16, category: "娛樂", type: "expense", active: true },
+  { id: 102, title: "手機月租", amount: 599, day: 20, category: "帳單", type: "expense", active: true },
+  { id: 103, title: "YouTube Premium", amount: 199, day: 25, category: "娛樂", type: "expense", active: true },
 ];
 
 function nextCharge(day: number) {
@@ -43,6 +44,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("全部");
   const [categoryFilter, setCategoryFilter] = useState("全部分類");
+  const [recurringFilter, setRecurringFilter] = useState<"all" | "expense" | "income">("all");
   const [barcode, setBarcode] = useState("/ABCD123");
   const [loaded, setLoaded] = useState(false);
   const [importType, setImportType] = useState<"csv" | "pdf">("csv");
@@ -61,11 +63,11 @@ export default function Home() {
           ]);
           if (!transactionsResponse.ok || !recurringResponse.ok) throw new Error("API unavailable");
           setTxs(await transactionsResponse.json());
-          setRecurring(await recurringResponse.json());
+          setRecurring((await recurringResponse.json()).map((item: Recurring) => ({ ...item, type: item.type || "expense" })));
         } catch { setToast("無法連接本機資料庫服務"); }
       } else if (saved) { try { setTxs(JSON.parse(saved)); } catch { localStorage.removeItem("selfbank-v1-transactions"); } }
       if (savedCode) setBarcode(savedCode);
-      if (!pythonApiUrl && savedRecurring) { try { setRecurring(JSON.parse(savedRecurring)); } catch { localStorage.removeItem("selfbank-v1-recurring"); } }
+      if (!pythonApiUrl && savedRecurring) { try { setRecurring(JSON.parse(savedRecurring).map((item: Recurring) => ({ ...item, type: item.type || "expense" }))); } catch { localStorage.removeItem("selfbank-v1-recurring"); } }
       setLoaded(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -88,7 +90,9 @@ export default function Home() {
     return { income, expense, net: income - expense };
   }, [shown]);
   const activeRecurring = recurring.filter(item => item.active).sort((a, b) => a.day - b.day);
-  const recurringTotal = activeRecurring.reduce((sum, item) => sum + item.amount, 0);
+  const visibleRecurring = activeRecurring.filter(item => recurringFilter === "all" || item.type === recurringFilter);
+  const recurringExpenseTotal = activeRecurring.filter(item => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
+  const recurringIncomeTotal = activeRecurring.filter(item => item.type === "income").reduce((sum, item) => sum + item.amount, 0);
 
   async function addTx(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -174,7 +178,8 @@ export default function Home() {
   async function addRecurring(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const candidate = { title: String(fd.get("title")), amount: Number(fd.get("amount")), day: Number(fd.get("day")), category: String(fd.get("category")), active: true };
+    const type = fd.get("type") as "expense" | "income";
+    const candidate = { title: String(fd.get("title")), amount: Number(fd.get("amount")), day: Number(fd.get("day")), category: type === "income" ? "收入" : String(fd.get("category")), type, active: true };
     let created: Recurring = { id: Date.now(), ...candidate };
     if (pythonApiUrl) {
       const response = await fetch(`${pythonApiUrl}/recurring`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
@@ -201,7 +206,7 @@ export default function Home() {
         <button className="nav" onClick={() => document.getElementById("transactions")?.scrollIntoView({behavior:"smooth"})}><Icon name="list" />交易紀錄</button>
         <button className="nav" onClick={() => document.getElementById("budget")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />預算規劃</button>
         <button className="nav" onClick={() => setModal("carrier")}><Icon name="card" />手機載具</button>
-        <button className="nav" onClick={() => document.getElementById("recurring")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />固定扣款</button>
+        <button className="nav" onClick={() => document.getElementById("recurring")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />固定收支</button>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
       <div className="privacy"><span>●</span><div><b>{pythonApiUrl ? "已連接本機 SQL Server" : "資料僅存在此裝置"}</b><small>{pythonApiUrl ? "交易由本機 Python API 保存" : "SelfBank 不會上傳你的財務資料"}</small></div></div>
@@ -228,10 +233,11 @@ export default function Home() {
         <article className="panel budget-card" id="budget"><div className="panel-head"><div><p className="eyebrow">本月預算</p><h3>守住生活的餘裕</h3></div><b>32%</b></div><div className="progress"><span style={{width:`${Math.min(100,stats.expense/15000*100)}%`}}></span></div><div className="budget-values"><span>已使用 <b>{money(stats.expense)}</b></span><span>預算 <b>{money(15000)}</b></span></div><p className="budget-note">照目前速度，月底預計可以剩下 {money(Math.max(0,15000-stats.expense))}。</p></article>
       </section>
 
-      <section className="panel recurring-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定扣款</p><h3>先替未來的支出留位置</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定扣款</button></div>
-        <div className="recurring-summary"><div><span>每月固定支出</span><strong>{money(recurringTotal)}</strong></div><div><span>啟用項目</span><strong>{activeRecurring.length} 筆</strong></div></div>
-        <div className="recurring-list">{activeRecurring.map(item => <div className="recurring-item" key={item.id}><div className="recurring-logo">{item.title.slice(0,1)}</div><div><b>{item.title}</b><span>{item.category} · 每月 {item.day} 日</span></div><time>下次 {nextCharge(item.day)}</time><strong>{money(item.amount)}</strong><button aria-label={`停用 ${item.title}`} onClick={() => pauseRecurring(item)}>暫停</button></div>)}</div>
-        <p className="recurring-hint">到期項目會列入預估；銀行 CSV 匯入後仍會使用防重複機制比對實際扣款。</p>
+      <section className="panel recurring-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定收支</p><h3>收入與支出都先安排好</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button></div>
+        <div className="recurring-summary"><div className="income-card"><span>每月固定收入</span><strong>{money(recurringIncomeTotal)}</strong></div><div><span>每月固定支出</span><strong>{money(recurringExpenseTotal)}</strong></div><div><span>預估淨收入</span><strong>{money(recurringIncomeTotal - recurringExpenseTotal)}</strong></div></div>
+        <div className="recurring-tabs filters" aria-label="固定收支篩選">{[["全部","all"],["固定支出","expense"],["固定收入","income"]].map(([label,value]) => <button key={value} aria-pressed={recurringFilter === value} className={recurringFilter === value ? "selected" : ""} onClick={() => setRecurringFilter(value as "all" | "expense" | "income")}>{label}</button>)}</div>
+        <div className="recurring-list">{visibleRecurring.map(item => <div className={`recurring-item ${item.type}`} key={item.id}><div className="recurring-logo">{item.type === "income" ? "+" : "−"}</div><div><b>{item.title}</b><span>{item.type === "income" ? "固定收入" : "固定支出"} · {item.category} · 每月 {item.day} 日</span></div><time>下次 {nextCharge(item.day)}</time><strong>{item.type === "income" ? "+" : "−"}{money(item.amount)}</strong><button aria-label={`停用 ${item.title}`} onClick={() => pauseRecurring(item)}>暫停</button></div>)}</div>
+        <p className="recurring-hint">固定收支用於預估；匯入銀行紀錄時仍會套用防重複規則，以實際入帳為準。</p>
       </section>
 
       <section className="panel transactions" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div>
@@ -246,7 +252,7 @@ export default function Home() {
       {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><button className="primary submit" type="submit">儲存交易</button></form></>}
       {modal === "carrier" && <><p className="eyebrow">快速出示</p><h2 id="modal-title">設定手機載具</h2><p className="modal-copy">請輸入財政部核發、以「/」開頭的 8 碼手機條碼。條碼只會保存在這個瀏覽器。</p><form onSubmit={e=>{e.preventDefault(); const code=String(new FormData(e.currentTarget).get("barcode")).toUpperCase(); setBarcode(code); localStorage.setItem("selfbank-v1-barcode",code); setModal(null);setToast("載具已更新");setTimeout(()=>setToast(""),2500)}}><label>手機條碼<input name="barcode" required pattern="/[0-9A-Z.+\-]{7}" maxLength={8} defaultValue={barcode} /></label><button className="primary submit">儲存載具</button></form></>}
       {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行紀錄</h2><div className="import-tabs"><button className={importType === "csv" ? "selected" : ""} onClick={() => setImportType("csv")}>CSV</button><button className={importType === "pdf" ? "selected" : ""} onClick={() => setImportType("pdf")}>加密 PDF</button></div><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對金額、店家與三日內的載具消費。</span></div>{importType === "csv" ? <><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類；類型請填 expense 或 income。</p><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></> : <form onSubmit={importPdf}><label>銀行 PDF<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">密碼只用於本次解密，不會寫入設定檔、資料庫或操作紀錄。</p>{!pythonApiUrl && <p className="api-warning">請先啟動 Python API 並設定 NEXT_PUBLIC_SELFBANK_API_URL，才能使用 PDF 匯入。</p>}<button className="primary submit" type="submit" disabled={!pythonApiUrl || pdfBusy}>{pdfBusy ? "解密與比對中…" : "匯入並比對重複消費"}</button></form>}</>}
-      {modal === "recurring" && <><p className="eyebrow">每月固定扣款</p><h2 id="modal-title">新增固定支出</h2><form onSubmit={addRecurring}><label>名稱<input name="title" required placeholder="例如：網路費或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">選擇 1–28 日可避免短月份日期不存在；之後匯入銀行紀錄時會自動比對，避免重複記帳。</p><button className="primary submit" type="submit">加入固定扣款</button></form></>}
+      {modal === "recurring" && <><p className="eyebrow">每月固定收支</p><h2 id="modal-title">新增固定收入或支出</h2><form onSubmit={addRecurring}><label>類型<select name="type" defaultValue="expense"><option value="expense">固定支出</option><option value="income">固定收入</option></select></label><label>名稱<input name="title" required placeholder="例如：薪資、房租或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月入帳／扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">固定收入會自動歸類為收入；選擇 1–28 日可避免短月份日期不存在。</p><button className="primary submit" type="submit">加入固定收支</button></form></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </div>;

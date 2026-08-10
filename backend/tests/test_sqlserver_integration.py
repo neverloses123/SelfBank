@@ -22,6 +22,7 @@ class SqlServerIntegrationTests(TestCase):
         )
         self.assertEqual(transaction["amount"], 123)
         recurring = self.db.create_recurring(
-            {"title": self.marker, "category": "帳單", "amount": 456, "day": 15, "active": True}
+            {"title": self.marker, "category": "收入", "amount": 456, "day": 15, "type": "income", "active": True}
         )
+        self.assertEqual(recurring["type"], "income")
         self.assertTrue(self.db.set_recurring_active(recurring["id"], False))

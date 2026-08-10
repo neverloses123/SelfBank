@@ -34,10 +34,13 @@ BEGIN
         category NVARCHAR(40) NOT NULL,
         amount DECIMAL(18,2) NOT NULL CHECK (amount > 0),
         charge_day TINYINT NOT NULL CHECK (charge_day BETWEEN 1 AND 28),
+        type VARCHAR(10) NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income')),
         active BIT NOT NULL DEFAULT 1,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;
+IF COL_LENGTH('dbo.recurring_payments', 'type') IS NULL
+    ALTER TABLE dbo.recurring_payments ADD type VARCHAR(10) NOT NULL CONSTRAINT DF_recurring_payments_type DEFAULT 'expense' WITH VALUES;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_recurring_active_day' AND object_id = OBJECT_ID('dbo.recurring_payments'))
     CREATE INDEX idx_recurring_active_day ON dbo.recurring_payments(active, charge_day);
 """
@@ -88,7 +91,7 @@ class SqlServerDatabase(Database):
     def list_recurring(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
             cursor = connection.execute(
-                "SELECT id, title, category, CAST(amount AS float) AS amount, charge_day AS day, active FROM dbo.recurring_payments ORDER BY active DESC, charge_day, id"
+                "SELECT id, title, category, CAST(amount AS float) AS amount, charge_day AS day, type, active FROM dbo.recurring_payments ORDER BY active DESC, charge_day, id"
             )
             rows = [self._dict(cursor, row) for row in cursor.fetchall()]
         return [{**row, "active": bool(row["active"])} for row in rows]
@@ -96,11 +99,11 @@ class SqlServerDatabase(Database):
     def create_recurring(self, item: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO dbo.recurring_payments(title, category, amount, charge_day, active) OUTPUT INSERTED.id, INSERTED.title, INSERTED.category, CAST(INSERTED.amount AS float), INSERTED.charge_day, INSERTED.active VALUES (?, ?, ?, ?, ?)",
-                item["title"], item["category"], item["amount"], item["day"], bool(item.get("active", True)),
+                "INSERT INTO dbo.recurring_payments(title, category, amount, charge_day, type, active) OUTPUT INSERTED.id, INSERTED.title, INSERTED.category, CAST(INSERTED.amount AS float), INSERTED.charge_day, INSERTED.type, INSERTED.active VALUES (?, ?, ?, ?, ?, ?)",
+                item["title"], item["category"], item["amount"], item["day"], item.get("type", "expense"), bool(item.get("active", True)),
             )
             row = cursor.fetchone()
-        result = dict(zip(("id", "title", "category", "amount", "day", "active"), row))
+        result = dict(zip(("id", "title", "category", "amount", "day", "type", "active"), row))
         result["active"] = bool(result["active"])
         return result
 

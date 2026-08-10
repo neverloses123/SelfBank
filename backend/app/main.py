@@ -28,6 +28,7 @@ class RecurringInput(BaseModel):
     category: str = Field(min_length=1, max_length=40)
     amount: float = Field(gt=0)
     day: int = Field(ge=1, le=28)
+    type: Literal["expense", "income"] = "expense"
     active: bool = True
 
 

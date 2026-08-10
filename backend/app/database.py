@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS recurring_payments (
     category TEXT NOT NULL,
     amount REAL NOT NULL CHECK (amount > 0),
     charge_day INTEGER NOT NULL CHECK (charge_day BETWEEN 1 AND 28),
+    type TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income')),
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -58,6 +59,9 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(recurring_payments)").fetchall()}
+            if "type" not in columns:
+                connection.execute("ALTER TABLE recurring_payments ADD COLUMN type TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income'))")
             connection.execute("PRAGMA optimize")
 
     def list_transactions(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -114,18 +118,18 @@ class Database:
     def list_recurring(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT id, title, category, amount, charge_day AS day, active FROM recurring_payments ORDER BY active DESC, charge_day, id"
+                "SELECT id, title, category, amount, charge_day AS day, type, active FROM recurring_payments ORDER BY active DESC, charge_day, id"
             ).fetchall()
         return [{**dict(row), "active": bool(row["active"])} for row in rows]
 
     def create_recurring(self, item: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO recurring_payments(title, category, amount, charge_day, active) VALUES (?, ?, ?, ?, ?)",
-                (item["title"], item["category"], item["amount"], item["day"], int(item.get("active", True))),
+                "INSERT INTO recurring_payments(title, category, amount, charge_day, type, active) VALUES (?, ?, ?, ?, ?, ?)",
+                (item["title"], item["category"], item["amount"], item["day"], item.get("type", "expense"), int(item.get("active", True))),
             )
             row = connection.execute(
-                "SELECT id, title, category, amount, charge_day AS day, active FROM recurring_payments WHERE id = ?",
+                "SELECT id, title, category, amount, charge_day AS day, type, active FROM recurring_payments WHERE id = ?",
                 (cursor.lastrowid,),
             ).fetchone()
         result = dict(row)
