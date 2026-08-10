@@ -18,6 +18,7 @@ const seed: Tx[] = [
 const categories = ["餐飲", "日常採買", "交通", "帳單", "娛樂", "學習", "醫療", "其他"];
 const colors: Record<string, string> = { "日常採買": "#ff7a59", "交通": "#5b7cfa", "餐飲": "#ffc857", "帳單": "#37b899", "學習": "#9a72d5", "其他": "#a5adba" };
 const money = (n: number) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(n);
+const pythonApiUrl = process.env.NEXT_PUBLIC_SELFBANK_API_URL || "";
 const recurringSeed: Recurring[] = [
   { id: 101, title: "Netflix", amount: 390, day: 16, category: "娛樂", active: true },
   { id: 102, title: "手機月租", amount: 599, day: 20, category: "帳單", active: true },
@@ -43,6 +44,8 @@ export default function Home() {
   const [filter, setFilter] = useState("全部");
   const [barcode, setBarcode] = useState("/ABCD123");
   const [loaded, setLoaded] = useState(false);
+  const [importType, setImportType] = useState<"csv" | "pdf">("csv");
+  const [pdfBusy, setPdfBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -103,6 +106,41 @@ export default function Home() {
     reader.readAsText(file);
   }
 
+  async function importPdf(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const file = fd.get("pdf") as File;
+    const password = String(fd.get("password") || "");
+    if (!pythonApiUrl || !file || !password) return;
+    setPdfBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("無法讀取 PDF"));
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch(`${pythonApiUrl}/imports/pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, content_base64: dataUrl.split(",")[1], password }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "PDF 匯入失敗");
+      setTxs(prev => [...result.created.map((item: Tx) => ({ ...item, id: Number(item.id) })), ...prev]);
+      form.reset();
+      setModal(null);
+      setToast(`已新增 ${result.created_count} 筆，略過 ${result.skipped_count} 筆重複消費`);
+      setTimeout(() => setToast(""), 3500);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "PDF 匯入失敗");
+      setTimeout(() => setToast(""), 3500);
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   function addRecurring(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -160,7 +198,7 @@ export default function Home() {
     {modal && <div className="overlay"><button className="backdrop" onClick={()=>setModal(null)} aria-label="關閉視窗" /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={()=>setModal(null)} aria-label="關閉"><Icon name="close" /></button>
       {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><button className="primary submit" type="submit">儲存交易</button></form></>}
       {modal === "carrier" && <><p className="eyebrow">快速出示</p><h2 id="modal-title">設定手機載具</h2><p className="modal-copy">請輸入財政部核發、以「/」開頭的 8 碼手機條碼。條碼只會保存在這個瀏覽器。</p><form onSubmit={e=>{e.preventDefault(); const code=String(new FormData(e.currentTarget).get("barcode")).toUpperCase(); setBarcode(code); localStorage.setItem("selfbank-v1-barcode",code); setModal(null);setToast("載具已更新");setTimeout(()=>setToast(""),2500)}}><label>手機條碼<input name="barcode" required pattern="/[0-9A-Z.+\-]{7}" maxLength={8} defaultValue={barcode} /></label><button className="primary submit">儲存載具</button></form></>}
-      {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行 CSV</h2><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類。系統會比對金額、店家與三日內的載具發票，自動略過重複消費；類型請填 expense 或 income。</p><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>同一份 CSV 再次匯入也不會重複新增。</span></div><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></>}
+      {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行紀錄</h2><div className="import-tabs"><button className={importType === "csv" ? "selected" : ""} onClick={() => setImportType("csv")}>CSV</button><button className={importType === "pdf" ? "selected" : ""} onClick={() => setImportType("pdf")}>加密 PDF</button></div><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對金額、店家與三日內的載具消費。</span></div>{importType === "csv" ? <><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類；類型請填 expense 或 income。</p><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></> : <form onSubmit={importPdf}><label>銀行 PDF<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">密碼只用於本次解密，不會寫入設定檔、資料庫或操作紀錄。</p>{!pythonApiUrl && <p className="api-warning">請先啟動 Python API 並設定 NEXT_PUBLIC_SELFBANK_API_URL，才能使用 PDF 匯入。</p>}<button className="primary submit" type="submit" disabled={!pythonApiUrl || pdfBusy}>{pdfBusy ? "解密與比對中…" : "匯入並比對重複消費"}</button></form>}</>}
       {modal === "recurring" && <><p className="eyebrow">每月固定扣款</p><h2 id="modal-title">新增固定支出</h2><form onSubmit={addRecurring}><label>名稱<input name="title" required placeholder="例如：網路費或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">選擇 1–28 日可避免短月份日期不存在；之後匯入銀行紀錄時會自動比對，避免重複記帳。</p><button className="primary submit" type="submit">加入固定扣款</button></form></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}

@@ -82,9 +82,7 @@ class Database:
 
     def import_csv(self, content: str) -> dict[str, Any]:
         reader = csv.DictReader(io.StringIO(content))
-        existing = self.list_transactions(limit=10_000)
-        accepted: list[dict[str, Any]] = []
-        skipped = 0
+        candidates: list[dict[str, Any]] = []
         for row in reader:
             candidate = {
                 "title": (row.get("title") or row.get("名稱") or "").strip(),
@@ -97,6 +95,15 @@ class Database:
             date.fromisoformat(candidate["date"])
             if not candidate["title"] or candidate["type"] not in {"expense", "income"}:
                 raise ValueError("CSV contains an invalid title or type")
+            candidates.append(candidate)
+        return self.import_transactions(candidates)
+
+    def import_transactions(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+        existing = self.list_transactions(limit=10_000)
+        accepted: list[dict[str, Any]] = []
+        skipped = 0
+        for candidate in candidates:
+            date.fromisoformat(candidate["date"])
             if any(is_duplicate(candidate, item) for item in [*existing, *accepted]):
                 skipped += 1
             else:
