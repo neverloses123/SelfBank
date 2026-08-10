@@ -2,6 +2,8 @@
 
 SelfBank 是個人使用的視覺化記帳 Web App。資料預設保存在使用者目前的瀏覽器，不會要求或儲存網路銀行密碼。
 
+專案目前採 React／TypeScript 前端搭配 FastAPI／SQLite Python 後端的漸進式架構。Python 服務尚未部署時，既有網站會繼續使用瀏覽器本機資料，不會中斷。
+
 ## v1 功能
 
 - 收入、支出與結餘儀表板
@@ -25,3 +27,7 @@ npm run dev
 ## 安全範圍
 
 v1 不會直接登入銀行，也尚未呼叫財政部電子發票正式 API。未來串接必須使用官方授權流程、伺服器端金鑰保存與銀行核准的 Open Banking／合作 API。
+
+## Python API
+
+Python 後端位於 `backend/`，提供交易、固定扣款、CSV 匯入與防重複 API，使用 SQLite 保存資料。啟動方式與環境變數請參考 `backend/README.md`。

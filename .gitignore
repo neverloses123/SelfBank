@@ -26,6 +26,10 @@
 npm-debug.log*
 dev-server*.log
 /.npm-cache/
+/backend/.venv/
+/backend/data/
+*.db-wal
+*.db-shm
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
