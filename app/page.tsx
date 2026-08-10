@@ -31,7 +31,7 @@ function Icon({ name }: { name: string }) {
 export function SelfBankApp({ view = "transactions" }: { view?: "transactions" | "recurring" | "analysis" }) {
   const [txs, setTxs] = useState<Tx[]>([]);
   const [recurring, setRecurring] = useState<Recurring[]>([]);
-  const [modal, setModal] = useState<"add" | "edit" | "import" | "recurring" | null>(null);
+  const [modal, setModal] = useState<"add" | "edit" | "import" | "recurring" | "export" | null>(null);
   const [editingTx, setEditingTx] = useState<Tx | null>(null);
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("全部");
@@ -120,6 +120,8 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     const expense = shown.filter(t => t.type === "expense").reduce((sum, item) => sum + item.amount, 0);
     return { income, expense, net: income - expense };
   }, [shown]);
+  const exportDefaultFrom = txs.length ? txs.reduce((earliest, item) => item.date < earliest ? item.date : earliest, txs[0].date) : `${currentMonth}-01`;
+  const exportDefaultTo = localDateKey(new Date());
   const activeRecurring = recurring.filter(item => item.active).sort((a, b) => a.day - b.day);
   const visibleRecurring = [...recurring].sort((a, b) => Number(b.active) - Number(a.active) || a.day - b.day).filter(item => recurringFilter === "all" || item.type === recurringFilter);
   const recurringExpenseTotal = activeRecurring.filter(item => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
@@ -201,17 +203,23 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     }
   }
 
-  async function exportPdf() {
+  async function exportPdf(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (!apiConnected) { setToast("SQL Server 未連線，無法匯出 PDF"); setTimeout(() => setToast(""), 3000); return; }
+    const form = new FormData(event.currentTarget);
+    const fromDate = String(form.get("from_date"));
+    const toDate = String(form.get("to_date"));
+    if (fromDate > toDate) { setToast("開始日期不可晚於結束日期"); return; }
     try {
-      const response = await fetch(`${pythonApiUrl}/exports/pdf`);
+      const params = new URLSearchParams({ from_date: fromDate, to_date: toDate });
+      const response = await fetch(`${pythonApiUrl}/exports/pdf?${params}`);
       if (!response.ok) throw new Error("PDF 匯出失敗");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url; link.download = `SelfBank-交易紀錄-${new Date().toISOString().slice(0, 10)}.pdf`;
+      link.href = url; link.download = `SelfBank-交易紀錄-${fromDate}-${toDate}.pdf`;
       document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-      setToast("交易紀錄 PDF 已匯出"); setTimeout(() => setToast(""), 2500);
+      setModal(null); setToast(`已匯出 ${fromDate} 至 ${toDate} 的交易 PDF`); setTimeout(() => setToast(""), 2500);
     } catch { setToast("PDF 匯出失敗，請確認本機 API 已啟動"); setTimeout(() => setToast(""), 3000); }
   }
 
@@ -316,7 +324,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
         <p className="recurring-hint">固定收支用於預估；匯入銀行紀錄時仍會套用防重複規則，以實際入帳為準。</p>
       </section>}
 
-      {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><div className="ledger-actions"><button className="secondary compact" onClick={exportPdf} aria-label="匯出交易紀錄 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></div>
+      {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><div className="ledger-actions"><button className="secondary compact" onClick={() => setModal("export")} aria-label="選擇日期範圍匯出交易紀錄 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></div>
         <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
         <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
         <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>類型</th><th>名稱</th><th>金額</th><th>日期</th><th>分類</th><th>備註</th><th>操作</th></tr></thead><tbody>{pageTransactions.map(t=><tr key={t.id}><td><span className={`type-badge ${t.type}`}>{t.type === "income" ? "收入" : "支出"}</span></td><td><b>{t.title}</b></td><td className={t.type === "income" ? "income-cell" : "expense-cell"}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</td><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.category}</td><td className="note-cell">{t.note || "—"}</td><td><button className="table-edit" onClick={() => openEdit(t)} aria-label={`編輯 ${t.title}`}>編輯</button></td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
@@ -330,6 +338,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
       {modal === "edit" && editingTx && <><p className="eyebrow">修改既有紀錄</p><h2 id="modal-title">編輯交易</h2><form onSubmit={editTx}><label>類型<select name="type" defaultValue={editingTx.type}><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required defaultValue={editingTx.title} /></label><div className="form-row"><label>金額<input name="amount" type="number" min="0" step="0.01" required defaultValue={editingTx.amount} /></label><label>日期<input name="date" type="date" required defaultValue={editingTx.date} /></label></div><label>分類<select name="category" defaultValue={editingTx.category}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>備註<input name="note" maxLength={200} defaultValue={editingTx.note || ""} placeholder="選填，最多 200 字" /></label><p className="modal-copy">交易只提供編輯，不提供刪除功能。</p><button className="primary submit" type="submit">儲存修改</button></form></>}
       {modal === "import" && <><p className="eyebrow">PDF 匯入</p><h2 id="modal-title">匯入交易紀錄</h2><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對日期、金額與交易內容，已匯入的紀錄不會重複新增。</span></div><form onSubmit={importPdf}><label>PDF 檔案<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">匯入後會顯示類型、名稱、金額、日期與分類。密碼只用於本次解密，不會保存。</p>{!apiConnected && <p className="api-warning">本機 API 或 HomeAccounting 資料庫尚未連線。</p>}<button className="primary submit" type="submit" disabled={!apiConnected || pdfBusy}>{pdfBusy ? "解密與匯入中…" : "匯入 PDF"}</button></form></>}
       {modal === "recurring" && <><p className="eyebrow">每月固定收支</p><h2 id="modal-title">新增固定收入或支出</h2><form onSubmit={addRecurring}><label>類型<select name="type" defaultValue="expense"><option value="expense">固定支出</option><option value="income">固定收入</option></select></label><label>名稱<input name="title" required placeholder="例如：薪資、房租或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月入帳／扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">固定收入會自動歸類為收入；選擇 1–28 日可避免短月份日期不存在。</p><button className="primary submit" type="submit">加入固定收支</button></form></>}
+      {modal === "export" && <><p className="eyebrow">PDF 匯出</p><h2 id="modal-title">選擇交易日期範圍</h2><form onSubmit={exportPdf}><div className="form-row"><label>開始日期<input name="from_date" type="date" required defaultValue={exportDefaultFrom} max={exportDefaultTo} /></label><label>結束日期<input name="to_date" type="date" required defaultValue={exportDefaultTo} max={exportDefaultTo} /></label></div><p className="modal-copy">PDF 只會包含開始日與結束日當天，以及兩者之間的交易紀錄。</p><button className="primary submit" type="submit">匯出指定範圍 PDF</button></form></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </div>;

@@ -155,11 +155,19 @@ def import_pdf(payload: PdfImportInput) -> dict:
 
 
 @app.get("/exports/pdf")
-def export_pdf() -> StreamingResponse:
-    content = build_transactions_pdf(require_database().list_transactions(limit=10_000))
+def export_pdf(from_date: date | None = None, to_date: date | None = None) -> StreamingResponse:
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="開始日期不可晚於結束日期")
+    transactions = require_database().list_transactions(limit=10_000)
+    if from_date:
+        transactions = [item for item in transactions if item["date"] >= from_date.isoformat()]
+    if to_date:
+        transactions = [item for item in transactions if item["date"] <= to_date.isoformat()]
+    content = build_transactions_pdf(transactions)
+    suffix = f"-{from_date.isoformat() if from_date else 'all'}-{to_date.isoformat() if to_date else 'all'}"
     return StreamingResponse(
         io.BytesIO(content), media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="selfbank-transactions.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="selfbank-transactions{suffix}.pdf"'},
     )
 
 

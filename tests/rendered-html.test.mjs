@@ -107,6 +107,10 @@ test("v1 只保留 PDF 匯入並提供 PDF 匯出", async () => {
   assert.match(page, /PDF 檔案/);
   assert.match(page, /匯出 PDF/);
   assert.match(page, /exports\/pdf/);
+  assert.match(page, /from_date/);
+  assert.match(page, /to_date/);
+  assert.match(page, /選擇交易日期範圍/);
+  assert.match(page, /匯出指定範圍 PDF/);
   assert.doesNotMatch(page, /CSV|台北富邦/);
 });
 
