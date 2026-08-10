@@ -74,8 +74,12 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
-  const currentMonth = localDateKey(new Date()).slice(0, 7);
+  const today = new Date();
+  const currentMonth = localDateKey(today).slice(0, 7);
+  const previousMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const previousMonth = localDateKey(previousMonthDate).slice(0, 7);
   const monthlyTxs = useMemo(() => txs.filter(transaction => transaction.date.startsWith(currentMonth)), [txs, currentMonth]);
+  const previousMonthExpense = useMemo(() => txs.filter(transaction => transaction.type === "expense" && transaction.date.startsWith(previousMonth)).reduce((sum, transaction) => sum + transaction.amount, 0), [txs, previousMonth]);
   const stats = useMemo(() => {
     const income = monthlyTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
     const expense = monthlyTxs.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
@@ -90,20 +94,20 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     return `${colors[category] || "#a5adba"} ${start.toFixed(2)}% ${donutCursor.toFixed(2)}%`;
   });
   const donutBackground = donutSegments.length ? `conic-gradient(${donutSegments.join(",")})` : "#e8ece9";
-  const recentDays = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(today);
-      date.setDate(today.getDate() - (6 - index));
+  const monthDays = useMemo(() => {
+    const current = new Date();
+    current.setHours(0, 0, 0, 0);
+    return Array.from({ length: current.getDate() }, (_, index) => {
+      const date = new Date(current.getFullYear(), current.getMonth(), index + 1);
       const key = localDateKey(date);
       const total = txs.filter(transaction => transaction.type === "expense" && transaction.date === key).reduce((sum, transaction) => sum + transaction.amount, 0);
-      return { key, label: ["日", "一", "二", "三", "四", "五", "六"][date.getDay()], total };
+      return { key, label: `${index + 1}日`, total };
     });
   }, [txs]);
-  const recentExpenseTotal = recentDays.reduce((sum, day) => sum + day.total, 0);
-  const recentDailyAverage = recentExpenseTotal / 7;
-  const recentMax = Math.max(...recentDays.map(day => day.total), 0);
+  const monthExpenseTotal = monthDays.reduce((sum, day) => sum + day.total, 0);
+  const monthDailyAverage = monthDays.length ? monthExpenseTotal / monthDays.length : 0;
+  const monthMax = Math.max(...monthDays.map(day => day.total), 0);
+  const monthlyComparison = previousMonthExpense > 0 ? Math.round((stats.expense - previousMonthExpense) / previousMonthExpense * 100) : null;
   const transactionCategories = categories;
   const shown = useMemo(() => txs.filter(t => (filter === "全部" || t.type === filter) && (categoryFilter === "全部分類" || t.category === categoryFilter)), [txs, filter, categoryFilter]);
   const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
@@ -270,7 +274,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     <main>
       <header><div><p className="eyebrow">SelfBank · 2026 年 8 月</p><h1>{pageMeta[0]}</h1><p className="page-description">{pageMeta[1]}</p></div>{view === "analysis" && <div className="header-actions"><button className="primary" onClick={exportAnalysisPdf} aria-label="匯出財務分析 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button></div>}</header>
       {view === "analysis" && <>
-      <section className="anomaly-panel"><div className="anomaly-title"><span>⚠</span><div><p className="eyebrow">主動偵測</p><h2>本月財務異常</h2></div></div><div className="anomaly-grid"><div><b>{topExpenseCategory?.[0] || "尚無支出"}支出 {money(topExpenseCategory?.[1] || 0)}</b><span>{topExpenseCategory ? "目前為本月最高支出分類" : "新增交易後開始分析"}</span></div><div><b>可變支出占預估總支出 {variableShare}%</b><span>{variableShare >= 70 ? "占比偏高，建議檢查非固定消費" : "目前仍在可控範圍"}</span></div><div><b>預估月底總支出 {money(projectedExpense)}</b><span>包含目前支出與尚未入帳的固定支出</span></div><div><b>近 6 個月比較：資料累積中</b><span>資料滿 6 個月後啟用平均、次數與連續上升警示</span></div></div></section>
+      <section className="anomaly-panel"><div className="anomaly-title"><span>⚠</span><div><p className="eyebrow">主動偵測</p><h2>本月財務異常</h2></div></div><div className="anomaly-grid"><div><b>{topExpenseCategory?.[0] || "尚無支出"}支出 {money(topExpenseCategory?.[1] || 0)}</b><span>{topExpenseCategory ? "目前為本月最高支出分類" : "新增交易後開始分析"}</span></div><div><b>可變支出占預估總支出 {variableShare}%</b><span>{variableShare >= 70 ? "占比偏高，建議檢查非固定消費" : "目前仍在可控範圍"}</span></div><div><b>預估月底總支出 {money(projectedExpense)}</b><span>包含目前支出與尚未入帳的固定支出</span></div><div><b>近 1 個月比較：{monthlyComparison === null ? "上月無支出資料" : monthlyComparison === 0 ? "與上月持平" : `較上月${monthlyComparison > 0 ? "增加" : "減少"} ${Math.abs(monthlyComparison)}%`}</b><span>本月 {money(stats.expense)} · 上月 {money(previousMonthExpense)}</span></div></div></section>
       <section className="hero-card">
         <div><p>預估本月盈虧</p><h2>{money(projectedBalance)}</h2><span className="trend">實際交易加上啟用中的固定收支</span></div>
         <div className="hero-stats"><div><span>預估本月收入</span><b>{money(projectedIncome)}</b></div><div><span>預估本月支出</span><b>{money(projectedExpense)}</b></div><div><span>預估儲蓄率</span><b>{projectedSavingsRate}%</b></div></div>
@@ -284,7 +288,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
       </section>
 
       <section className="grid-bottom">
-        <article className="panel trend-card"><div className="panel-head"><div><p className="eyebrow">消費趨勢</p><h3>最近 7 天</h3></div><b>日均 {money(Math.round(recentDailyAverage))}</b></div>{recentExpenseTotal > 0 ? <div className="chart" aria-label="最近七天真實支出長條圖">{recentDays.map(day => <div className="bar-col" key={day.key} title={`${day.key}：${money(day.total)}`}><span className={day.total === recentMax ? "highlight" : ""} style={{height: day.total ? `${Math.max(6, day.total / recentMax * 100)}%` : "0"}}></span><small>{day.label}</small><em>{day.total ? money(day.total) : "—"}</em></div>)}</div> : <div className="chart-empty trend-empty">最近 7 天沒有支出資料</div>}</article>
+        <article className="panel trend-card"><div className="panel-head"><div><p className="eyebrow">本月 1 日至今日</p><h3>本月消費趨勢</h3></div><b>日均 {money(Math.round(monthDailyAverage))}</b></div>{monthExpenseTotal > 0 ? <div className="month-chart-scroll"><div className="chart month-chart" style={{minWidth: `${Math.max(560, monthDays.length * 56)}px`}} aria-label="本月一日至今日真實支出長條圖">{monthDays.map(day => <div className="bar-col" key={day.key} title={`${day.key}：${money(day.total)}`}><span className={day.total === monthMax ? "highlight" : ""} style={{height: day.total ? `${Math.max(6, day.total / monthMax * 100)}%` : "0"}}></span><small>{day.label}</small><em>{day.total ? money(day.total) : "—"}</em></div>)}</div></div> : <div className="chart-empty trend-empty">本月尚無支出資料</div>}</article>
         <article className="panel cost-structure"><div className="panel-head"><div><p className="eyebrow">支出結構</p><h3>固定與可變支出</h3></div><b>{money(projectedExpense)}</b></div><div className="cost-table"><div><span>固定支出</span><b>{money(recurringExpenseTotal)}</b><small>{projectedExpense ? Math.round(recurringExpenseTotal/projectedExpense*100) : 0}%</small></div><div><span>可變支出</span><b>{money(stats.expense)}</b><small>{variableShare}%</small></div><div className="total"><span>預估總支出</span><b>{money(projectedExpense)}</b><small>100%</small></div></div></article>
       </section>
       </>}
