@@ -30,6 +30,13 @@ test("固定收支與財務分析為獨立頁面", async () => {
   const analysisHtml = await (await render("/analysis")).text();
   for (const text of ["本月財務異常", "最近 7 天", "支出分析", "本月盈虧", "儲蓄率", "固定與可變支出", "預估月底總支出"]) assert.match(analysisHtml, new RegExp(text));
   assert.doesNotMatch(analysisHtml, /所有支出與收入|每月固定收入/);
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /donutBackground/);
+  assert.match(page, /recentDays/);
+  assert.match(page, /transaction\.date === key/);
+  assert.match(page, /最近 7 天沒有支出資料/);
+  assert.match(page, /本月沒有支出資料/);
+  assert.doesNotMatch(page, /\[42,72,35,88,55,28,64\]|stats\.expense\/7|sortedCats\.slice\(0,4\)/);
 });
 
 test("交易紀錄支援收支與分類交叉篩選", async () => {

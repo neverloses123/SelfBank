@@ -15,6 +15,13 @@ function nextCharge(day: number) {
   return `${target.getMonth() + 1}/${target.getDate()}`;
 }
 
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function Icon({ name }: { name: string }) {
   const icons: Record<string, string> = { home: "⌂", list: "≡", budget: "◎", card: "▰", sync: "↻", plus: "+", bell: "◌", upload: "⇧", close: "×" };
   return <span className="icon" aria-hidden="true">{icons[name]}</span>;
@@ -65,13 +72,36 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     return () => { active = false; window.clearInterval(timer); };
   }, []);
 
+  const currentMonth = localDateKey(new Date()).slice(0, 7);
+  const monthlyTxs = useMemo(() => txs.filter(transaction => transaction.date.startsWith(currentMonth)), [txs, currentMonth]);
   const stats = useMemo(() => {
-    const income = txs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-    const expense = txs.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+    const income = monthlyTxs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const expense = monthlyTxs.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
     return { income, expense, balance: income - expense };
-  }, [txs]);
-  const catTotals = useMemo(() => txs.filter(t => t.type === "expense").reduce<Record<string, number>>((a, t) => ({ ...a, [t.category]: (a[t.category] || 0) + t.amount }), {}), [txs]);
+  }, [monthlyTxs]);
+  const catTotals = useMemo(() => monthlyTxs.filter(t => t.type === "expense").reduce<Record<string, number>>((a, t) => ({ ...a, [t.category]: (a[t.category] || 0) + t.amount }), {}), [monthlyTxs]);
   const sortedCats = Object.entries(catTotals).sort((a,b) => b[1]-a[1]);
+  let donutCursor = 0;
+  const donutSegments = sortedCats.filter(([, value]) => value > 0).map(([category, value]) => {
+    const start = donutCursor;
+    donutCursor += stats.expense ? value / stats.expense * 100 : 0;
+    return `${colors[category] || "#a5adba"} ${start.toFixed(2)}% ${donutCursor.toFixed(2)}%`;
+  });
+  const donutBackground = donutSegments.length ? `conic-gradient(${donutSegments.join(",")})` : "#e8ece9";
+  const recentDays = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (6 - index));
+      const key = localDateKey(date);
+      const total = txs.filter(transaction => transaction.type === "expense" && transaction.date === key).reduce((sum, transaction) => sum + transaction.amount, 0);
+      return { key, label: ["日", "一", "二", "三", "四", "五", "六"][date.getDay()], total };
+    });
+  }, [txs]);
+  const recentExpenseTotal = recentDays.reduce((sum, day) => sum + day.total, 0);
+  const recentDailyAverage = recentExpenseTotal / 7;
+  const recentMax = Math.max(...recentDays.map(day => day.total), 0);
   const transactionCategories = categories;
   const shown = useMemo(() => txs.filter(t => (filter === "全部" || t.type === filter) && (categoryFilter === "全部分類" || t.category === categoryFilter)), [txs, filter, categoryFilter]);
   const shownSummary = useMemo(() => {
@@ -215,13 +245,13 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
 
       <section className="grid-top analysis-grid">
         <article className="panel spending"><div className="panel-head"><div><p className="eyebrow">支出分析</p><h3>錢都花去哪了？</h3></div><span>本月</span></div>
-          <div className="spending-body"><div className="donut" style={{"--p": `${Math.min(75, stats.expense/100)}deg`} as React.CSSProperties}><div><strong>{money(stats.expense)}</strong><small>總支出</small></div></div>
-            <div className="legend">{sortedCats.slice(0,4).map(([cat,val]) => <div key={cat}><i style={{background: colors[cat] || colors.其他}} /><span>{cat}</span><b>{money(val)}</b><small>{stats.expense ? Math.round(val/stats.expense*100) : 0}%</small></div>)}</div></div>
+          <div className="spending-body"><div className="donut" style={{background: donutBackground}} aria-label={`本月支出 ${money(stats.expense)}`}><div><strong>{money(stats.expense)}</strong><small>總支出</small></div></div>
+            <div className="legend">{sortedCats.length ? sortedCats.map(([cat,val]) => <div key={cat}><i style={{background: colors[cat] || "#a5adba"}} /><span>{cat}</span><b>{money(val)}</b><small>{stats.expense ? Math.round(val/stats.expense*100) : 0}%</small></div>) : <p className="chart-empty">本月沒有支出資料</p>}</div></div>
         </article>
       </section>
 
       <section className="grid-bottom">
-        <article className="panel trend-card"><div className="panel-head"><div><p className="eyebrow">消費趨勢</p><h3>最近 7 天</h3></div><b>日均 {money(Math.round(stats.expense/7))}</b></div><div className="chart" aria-label="最近七天支出長條圖">{[42,72,35,88,55,28,64].map((h,i)=><div className="bar-col" key={i}><span className={i===3?"highlight":""} style={{height:`${h}%`}}></span><small>{["一","二","三","四","五","六","日"][i]}</small></div>)}</div></article>
+        <article className="panel trend-card"><div className="panel-head"><div><p className="eyebrow">消費趨勢</p><h3>最近 7 天</h3></div><b>日均 {money(Math.round(recentDailyAverage))}</b></div>{recentExpenseTotal > 0 ? <div className="chart" aria-label="最近七天真實支出長條圖">{recentDays.map(day => <div className="bar-col" key={day.key} title={`${day.key}：${money(day.total)}`}><span className={day.total === recentMax ? "highlight" : ""} style={{height: day.total ? `${Math.max(6, day.total / recentMax * 100)}%` : "0"}}></span><small>{day.label}</small><em>{day.total ? money(day.total) : "—"}</em></div>)}</div> : <div className="chart-empty trend-empty">最近 7 天沒有支出資料</div>}</article>
         <article className="panel cost-structure"><div className="panel-head"><div><p className="eyebrow">支出結構</p><h3>固定與可變支出</h3></div><b>{money(projectedExpense)}</b></div><div className="cost-table"><div><span>固定支出</span><b>{money(recurringExpenseTotal)}</b><small>{projectedExpense ? Math.round(recurringExpenseTotal/projectedExpense*100) : 0}%</small></div><div><span>可變支出</span><b>{money(stats.expense)}</b><small>{variableShare}%</small></div><div className="total"><span>預估總支出</span><b>{money(projectedExpense)}</b><small>100%</small></div></div></article>
       </section>
       </>}
