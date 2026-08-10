@@ -1,7 +1,6 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { isDuplicateTransaction } from "../lib/dedupe";
 
 type Tx = { id: number; title: string; category: string; amount: number; date: string; type: "expense" | "income"; source: string };
@@ -211,9 +210,9 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">S</span><span>SelfBank</span></div>
       <nav aria-label="主要選單">
-        <Link className={`nav ${view === "transactions" ? "active" : ""}`} href="/"><Icon name="list" />交易紀錄</Link>
-        <Link className={`nav ${view === "recurring" ? "active" : ""}`} href="/recurring"><Icon name="budget" />固定收支</Link>
-        <Link className={`nav ${view === "analysis" ? "active" : ""}`} href="/analysis"><Icon name="home" />財務分析</Link>
+        <a className={`nav ${view === "transactions" ? "active" : ""}`} href="/"><Icon name="list" />交易紀錄</a>
+        <a className={`nav ${view === "recurring" ? "active" : ""}`} href="/recurring"><Icon name="budget" />固定收支</a>
+        <a className={`nav ${view === "analysis" ? "active" : ""}`} href="/analysis"><Icon name="home" />財務分析</a>
         <button className="nav" onClick={() => setModal("carrier")}><Icon name="card" />手機載具</button>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
