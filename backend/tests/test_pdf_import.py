@@ -48,3 +48,21 @@ class PdfImportTests(TestCase):
         self.assertEqual(rows[1]["amount"], 219)
         self.assertEqual(rows[2]["title"], "ＣＤ轉收")
         self.assertEqual(rows[2]["amount"], 16000)
+
+    def test_parse_continuation_tables_from_later_pdf_pages(self) -> None:
+        tables = [
+            [
+                ["帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註"],
+                ["2026/08/10", "2026/08/10 10:00", "刷卡消費", "100.00", "", "9,900.00", "第一頁商店"],
+            ],
+            [
+                ["2026/08/09", "2026/08/09 11:00", "刷卡消費", "200.00", "", "9,700.00", "第二頁商店"],
+            ],
+            [
+                ["2026/08/08", "2026/08/08 12:00", "發票獎金", "", "300.00", "10,000.00", "第三頁資料"],
+            ],
+        ]
+        rows = parse_fubon_tables(tables)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([row["title"] for row in rows], ["第一頁商店", "第二頁商店", "發票獎金"])
+        self.assertEqual(rows[2]["type"], "income")

@@ -41,18 +41,25 @@ def _amount(value: Any) -> float | None:
 def parse_fubon_tables(tables: list[list[list[Any]]]) -> list[dict[str, Any]]:
     """Parse Taipei Fubon TWD demand-deposit statement tables."""
     transactions: list[dict[str, Any]] = []
+    active_indexes: dict[str, int] | None = None
     for table in tables:
         header_index = next(
             (index for index, row in enumerate(table) if row and "帳務日期" in "".join(_clean_cell(cell) for cell in row)),
             None,
         )
-        if header_index is None:
+        if header_index is not None:
+            header = [_clean_cell(cell) for cell in table[header_index]]
+            indexes = {name: next((i for i, cell in enumerate(header) if name in cell), -1) for name in ("帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註")}
+            if min(indexes.values()) < 0:
+                continue
+            active_indexes = indexes
+            data_rows = table[header_index + 1 :]
+        elif active_indexes is not None:
+            indexes = active_indexes
+            data_rows = table
+        else:
             continue
-        header = [_clean_cell(cell) for cell in table[header_index]]
-        indexes = {name: next((i for i, cell in enumerate(header) if name in cell), -1) for name in ("帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註")}
-        if min(indexes.values()) < 0:
-            continue
-        for row in table[header_index + 1 :]:
+        for row in data_rows:
             if not row or len(row) <= max(indexes.values()):
                 continue
             raw_date = _clean_cell(row[indexes["帳務日期"]])

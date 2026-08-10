@@ -54,6 +54,11 @@ test("交易紀錄支援收支與分類交叉篩選", async () => {
   const api = await readFile(new URL("../backend/app/main.py", import.meta.url), "utf8");
   assert.match(api, /@app\.patch\("\/transactions\/\{item_id\}"\)/);
   assert.doesNotMatch(api, /@app\.delete/);
+  assert.match(page, /const PAGE_SIZE = 10/);
+  assert.match(page, /pageTransactions/);
+  assert.match(page, /每頁 10 筆/);
+  assert.match(page, /上一頁/);
+  assert.match(page, /下一頁/);
 });
 
 test("固定扣款保留，外部帳號連動已移除", async () => {

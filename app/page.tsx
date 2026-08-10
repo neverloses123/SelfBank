@@ -9,6 +9,7 @@ const categories = ["餐飲", "日用品", "娛樂", "交通", "股票", "醫療
 const colors: Record<string, string> = { "日用品": "#ff7a59", "交通": "#5b7cfa", "餐飲": "#ffc857", "娛樂": "#37b899", "股票": "#9a72d5", "醫療": "#a5adba" };
 const money = (n: number) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(n);
 const pythonApiUrl = process.env.NEXT_PUBLIC_SELFBANK_API_URL || "";
+const PAGE_SIZE = 10;
 function nextCharge(day: number) {
   const today = new Date();
   const target = new Date(today.getFullYear(), today.getMonth() + (today.getDate() > day ? 1 : 0), day);
@@ -39,6 +40,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   const [pdfBusy, setPdfBusy] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "api-disconnected" | "database-disconnected">("checking");
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -104,6 +106,10 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   const recentMax = Math.max(...recentDays.map(day => day.total), 0);
   const transactionCategories = categories;
   const shown = useMemo(() => txs.filter(t => (filter === "全部" || t.type === filter) && (categoryFilter === "全部分類" || t.category === categoryFilter)), [txs, filter, categoryFilter]);
+  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const pageTransactions = shown.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  useEffect(() => { setCurrentPage(1); }, [filter, categoryFilter]);
+  useEffect(() => { setCurrentPage(page => Math.min(page, pageCount)); }, [pageCount]);
   const shownSummary = useMemo(() => {
     const income = shown.filter(t => t.type === "income").reduce((sum, item) => sum + item.amount, 0);
     const expense = shown.filter(t => t.type === "expense").reduce((sum, item) => sum + item.amount, 0);
@@ -266,7 +272,8 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
       {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><div className="ledger-actions"><button className="secondary compact" onClick={exportPdf} aria-label="匯出交易紀錄 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></div>
         <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
         <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
-        <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>類型</th><th>名稱</th><th>金額</th><th>日期</th><th>分類</th><th>備註</th><th>操作</th></tr></thead><tbody>{shown.map(t=><tr key={t.id}><td><span className={`type-badge ${t.type}`}>{t.type === "income" ? "收入" : "支出"}</span></td><td><b>{t.title}</b></td><td className={t.type === "income" ? "income-cell" : "expense-cell"}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</td><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.category}</td><td className="note-cell">{t.note || "—"}</td><td><button className="table-edit" onClick={() => openEdit(t)} aria-label={`編輯 ${t.title}`}>編輯</button></td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
+        <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>類型</th><th>名稱</th><th>金額</th><th>日期</th><th>分類</th><th>備註</th><th>操作</th></tr></thead><tbody>{pageTransactions.map(t=><tr key={t.id}><td><span className={`type-badge ${t.type}`}>{t.type === "income" ? "收入" : "支出"}</span></td><td><b>{t.title}</b></td><td className={t.type === "income" ? "income-cell" : "expense-cell"}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</td><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.category}</td><td className="note-cell">{t.note || "—"}</td><td><button className="table-edit" onClick={() => openEdit(t)} aria-label={`編輯 ${t.title}`}>編輯</button></td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
+        {shown.length > 0 && <nav className="pagination" aria-label="交易紀錄分頁"><button onClick={() => setCurrentPage(page => Math.max(1, page - 1))} disabled={currentPage === 1}>上一頁</button><span>第 {currentPage} / {pageCount} 頁 · 每頁 10 筆</span><button onClick={() => setCurrentPage(page => Math.min(pageCount, page + 1))} disabled={currentPage === pageCount}>下一頁</button></nav>}
       </section>}
       <footer>SelfBank v1 · 個人財務資料，安心留在自己的裝置</footer>
     </main>
