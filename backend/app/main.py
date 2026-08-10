@@ -79,6 +79,14 @@ origins = [origin.strip() for origin in os.getenv("SELFBANK_CORS_ORIGINS", "http
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type"])
 
 
+@app.middleware("http")
+async def allow_local_private_network(request, call_next):
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network") == "true" or request.headers.get("origin"):
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
 def require_database():
     if database is None:
         raise HTTPException(status_code=503, detail="SQL Server 未連線")

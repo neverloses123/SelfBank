@@ -41,6 +41,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   const [apiConnected, setApiConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "api-disconnected" | "database-disconnected">("checking");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -243,19 +244,34 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
 
   async function toggleRecurring(item: Recurring) {
     if (!apiConnected) { setToast("SQL Server 未連線，無法更新固定收支"); return; }
-    const response = await fetch(`${pythonApiUrl}/recurring/${item.id}?active=${!item.active}`, { method: "PATCH" });
-    if (!response.ok) { setToast("資料庫更新失敗"); return; }
-    setRecurring(prev => prev.map(row => row.id === item.id ? {...row, active:!item.active} : row));
-    setToast(item.active ? "固定收支已暫停，不會納入分析" : "固定收支已啟用"); setTimeout(() => setToast(""), 2500);
+    try {
+      const response = await fetch(`${pythonApiUrl}/recurring/${item.id}?active=${!item.active}`, { method: "PATCH" });
+      if (!response.ok) { setToast("資料庫更新失敗"); return; }
+      setRecurring(prev => prev.map(row => row.id === item.id ? {...row, active:!item.active} : row));
+      setToast(item.active ? "固定收支已暫停，不會納入分析" : "固定收支已啟用"); setTimeout(() => setToast(""), 2500);
+    } catch {
+      setApiConnected(false); setConnectionStatus("api-disconnected");
+      setToast("無法連上本機 API，固定收支尚未變更");
+    }
   }
 
   async function deleteRecurring(item: Recurring) {
     if (!apiConnected) { setToast("SQL Server 未連線，無法刪除固定收支"); return; }
-    if (!window.confirm(`確定永久刪除「${item.title}」？此操作無法復原。`)) return;
-    const response = await fetch(`${pythonApiUrl}/recurring/${item.id}`, { method: "DELETE" });
-    if (!response.ok) { setToast("資料庫刪除失敗"); return; }
-    setRecurring(prev => prev.filter(row => row.id !== item.id));
-    setToast("固定收支已從資料庫刪除"); setTimeout(() => setToast(""), 2500);
+    if (pendingDeleteId !== item.id) {
+      setPendingDeleteId(item.id);
+      setToast(`再次按下「確認刪除」才會永久刪除 ${item.title}`);
+      return;
+    }
+    try {
+      const response = await fetch(`${pythonApiUrl}/recurring/${item.id}`, { method: "DELETE" });
+      if (!response.ok) { setToast("資料庫刪除失敗"); return; }
+      setRecurring(prev => prev.filter(row => row.id !== item.id));
+      setPendingDeleteId(null);
+      setToast("固定收支已從資料庫刪除"); setTimeout(() => setToast(""), 2500);
+    } catch {
+      setApiConnected(false); setConnectionStatus("api-disconnected");
+      setToast("無法連上本機 API，固定收支尚未刪除");
+    }
   }
 
   return <div className="shell">
@@ -296,7 +312,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
       {view === "recurring" && <section className="panel recurring-panel page-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定收支</p><h3>收入與支出都先安排好</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button></div>
         <div className="recurring-summary"><div className="income-card"><span>每月固定收入</span><strong>{money(recurringIncomeTotal)}</strong></div><div><span>每月固定支出</span><strong>{money(recurringExpenseTotal)}</strong></div><div><span>預估淨收入</span><strong>{money(recurringIncomeTotal - recurringExpenseTotal)}</strong></div></div>
         <div className="recurring-tabs filters" aria-label="固定收支篩選">{[["全部","all"],["固定支出","expense"],["固定收入","income"]].map(([label,value]) => <button key={value} aria-pressed={recurringFilter === value} className={recurringFilter === value ? "selected" : ""} onClick={() => setRecurringFilter(value as "all" | "expense" | "income")}>{label}</button>)}</div>
-        <div className="recurring-list">{visibleRecurring.map(item => <div className={`recurring-item ${item.type} ${item.active ? "" : "paused"}`} key={item.id}><div className="recurring-logo">{item.type === "income" ? "+" : "−"}</div><div><b>{item.title}</b><span>{item.type === "income" ? "固定收入" : "固定支出"} · {item.category} · 每月 {item.day} 日{item.active ? "" : " · 已暫停"}</span></div><time>{item.active ? `下次 ${nextCharge(item.day)}` : "不納入計算"}</time><strong>{item.type === "income" ? "+" : "−"}{money(item.amount)}</strong><div className="recurring-actions"><button aria-label={`${item.active ? "暫停" : "啟用"} ${item.title}`} onClick={() => toggleRecurring(item)}>{item.active ? "暫停" : "啟用"}</button><button className="delete" aria-label={`刪除 ${item.title}`} onClick={() => deleteRecurring(item)}>刪除</button></div></div>)}</div>
+        <div className="recurring-list">{visibleRecurring.map(item => <div className={`recurring-item ${item.type} ${item.active ? "" : "paused"}`} key={item.id}><div className="recurring-logo">{item.type === "income" ? "+" : "−"}</div><div><b>{item.title}</b><span>{item.type === "income" ? "固定收入" : "固定支出"} · {item.category} · 每月 {item.day} 日{item.active ? "" : " · 已暫停"}</span></div><time>{item.active ? `下次 ${nextCharge(item.day)}` : "不納入計算"}</time><strong>{item.type === "income" ? "+" : "−"}{money(item.amount)}</strong><div className="recurring-actions"><button aria-label={`${item.active ? "暫停" : "啟用"} ${item.title}`} onClick={() => toggleRecurring(item)}>{item.active ? "暫停" : "啟用"}</button><button className={`delete ${pendingDeleteId === item.id ? "confirm" : ""}`} aria-label={`${pendingDeleteId === item.id ? "確認刪除" : "刪除"} ${item.title}`} onClick={() => deleteRecurring(item)}>{pendingDeleteId === item.id ? "確認刪除" : "刪除"}</button></div></div>)}</div>
         <p className="recurring-hint">固定收支用於預估；匯入銀行紀錄時仍會套用防重複規則，以實際入帳為準。</p>
       </section>}
 
