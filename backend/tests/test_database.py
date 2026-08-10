@@ -49,6 +49,24 @@ class DatabaseTests(TestCase):
         self.assertEqual(transaction["balance"], 465024)
         self.assertEqual(transaction["note"], "義美股份有限公司")
 
+    def test_existing_transaction_can_be_edited_without_deleting_it(self) -> None:
+        transaction = self.db.create_transaction({
+            "title": "午餐", "category": "餐飲", "amount": 120,
+            "date": "2026-08-10", "type": "expense", "source": "手動記帳",
+        })
+        updated = self.db.update_transaction(transaction["id"], {
+            "title": "公司午餐", "category": "餐飲", "amount": 150,
+            "date": "2026-08-10", "type": "expense", "note": "與同事聚餐",
+        })
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated["amount"], 150)
+        self.assertEqual(updated["note"], "與同事聚餐")
+        self.assertEqual(len(self.db.list_transactions()), 1)
+        self.assertIsNone(self.db.update_transaction(999999, {
+            "title": "不存在", "category": "餐飲", "amount": 1,
+            "date": "2026-08-10", "type": "expense", "note": None,
+        }))
+
     def test_reference_tables_have_requested_values(self) -> None:
         self.assertEqual([row["name"] for row in self.db.list_categories()], ["餐飲", "日用品", "娛樂", "交通", "股票", "醫療"])
         self.assertEqual([row["name"] for row in self.db.list_transaction_types()], ["收入", "支出"])

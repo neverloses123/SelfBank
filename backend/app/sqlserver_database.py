@@ -207,6 +207,20 @@ class SqlServerDatabase(Database):
             row = cursor.fetchone()
             return dict(zip(("id", "title", "category", "amount", "date", "type", "source", "transaction_time", "summary", "expense_amount", "income_amount", "balance", "note"), row))
 
+    def update_transaction(self, item_id: int, transaction: dict[str, Any]) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE dbo.transactions SET title = ?, category = ?, amount = ?, transaction_date = ?, type = ?, note = ? WHERE id = ?",
+                transaction["title"], transaction["category"], transaction["amount"], transaction["date"], transaction["type"], transaction.get("note"), item_id,
+            )
+            if cursor.rowcount != 1:
+                return None
+            row = connection.execute(
+                "SELECT id, title, category, CAST(amount AS float), CONVERT(varchar(10), transaction_date, 23), type, source, transaction_time, summary, CAST(expense_amount AS float), CAST(income_amount AS float), CAST(balance AS float), note FROM dbo.transactions WHERE id = ?",
+                item_id,
+            ).fetchone()
+        return dict(zip(("id", "title", "category", "amount", "date", "type", "source", "transaction_time", "summary", "expense_amount", "income_amount", "balance", "note"), row))
+
     def list_categories(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
             cursor = connection.execute("SELECT id, name, sort_order FROM dbo.transaction_categories ORDER BY sort_order")

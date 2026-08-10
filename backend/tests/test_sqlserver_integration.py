@@ -23,6 +23,13 @@ class SqlServerIntegrationTests(TestCase):
             {"title": self.marker, "category": "其他", "amount": 123, "date": "2026-08-10", "type": "expense", "source": "自動測試"}
         )
         self.assertEqual(transaction["amount"], 123)
+        updated = self.db.update_transaction(transaction["id"], {
+            "title": self.marker, "category": "餐飲", "amount": 321,
+            "date": "2026-08-10", "type": "expense", "note": "更新測試",
+        })
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated["amount"], 321)
+        self.assertEqual(updated["note"], "更新測試")
         recurring = self.db.create_recurring(
             {"title": self.marker, "category": "收入", "amount": 456, "day": 15, "type": "income", "active": True}
         )

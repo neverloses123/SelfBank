@@ -127,6 +127,20 @@ class Database:
             ).fetchone()
         return dict(row)
 
+    def update_transaction(self, item_id: int, transaction: dict[str, Any]) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE transactions SET title = ?, category = ?, amount = ?, transaction_date = ?, type = ?, note = ? WHERE id = ?",
+                (transaction["title"], transaction["category"], transaction["amount"], transaction["date"], transaction["type"], transaction.get("note"), item_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+            row = connection.execute(
+                "SELECT id, title, category, amount, transaction_date AS date, type, source, transaction_time, summary, expense_amount, income_amount, balance, note FROM transactions WHERE id = ?",
+                (item_id,),
+            ).fetchone()
+        return dict(row)
+
     def import_transactions(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         existing = self.list_transactions(limit=10_000)
         accepted: list[dict[str, Any]] = []

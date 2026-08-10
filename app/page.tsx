@@ -23,7 +23,8 @@ function Icon({ name }: { name: string }) {
 export function SelfBankApp({ view = "transactions" }: { view?: "transactions" | "recurring" | "analysis" }) {
   const [txs, setTxs] = useState<Tx[]>([]);
   const [recurring, setRecurring] = useState<Recurring[]>([]);
-  const [modal, setModal] = useState<"add" | "import" | "recurring" | null>(null);
+  const [modal, setModal] = useState<"add" | "edit" | "import" | "recurring" | null>(null);
+  const [editingTx, setEditingTx] = useState<Tx | null>(null);
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("全部");
   const [categoryFilter, setCategoryFilter] = useState("全部分類");
@@ -95,13 +96,30 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const type = fd.get("type") as "expense" | "income";
-    const candidate = { title: String(fd.get("title")), category: String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳" };
+    const candidate = { title: String(fd.get("title")), category: String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳", note: String(fd.get("note") || "") || null };
     if (!apiConnected) { setToast("SQL Server 未連線，無法新增交易"); return; }
     const response = await fetch(`${pythonApiUrl}/transactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
     if (!response.ok) { setToast("資料庫寫入失敗"); return; }
     const created: Tx = await response.json();
     setTxs([created, ...txs]);
     setModal(null); setToast("交易已新增"); setTimeout(() => setToast(""), 2500);
+  }
+
+  function openEdit(transaction: Tx) {
+    setEditingTx(transaction);
+    setModal("edit");
+  }
+
+  async function editTx(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!apiConnected || !editingTx) { setToast("SQL Server 未連線，無法更新交易"); return; }
+    const fd = new FormData(e.currentTarget);
+    const candidate = { title: String(fd.get("title")), category: String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type: fd.get("type") as "expense" | "income", note: String(fd.get("note") || "") || null };
+    const response = await fetch(`${pythonApiUrl}/transactions/${editingTx.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
+    if (!response.ok) { setToast("資料庫更新失敗"); return; }
+    const updated: Tx = await response.json();
+    setTxs(previous => previous.map(item => item.id === updated.id ? updated : item));
+    setEditingTx(null); setModal(null); setToast("交易已更新"); setTimeout(() => setToast(""), 2500);
   }
 
   async function importPdf(e: FormEvent<HTMLFormElement>) {
@@ -218,13 +236,14 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
       {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><div className="ledger-actions"><button className="secondary compact" onClick={exportPdf} aria-label="匯出交易紀錄 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></div>
         <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
         <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
-        <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>類型</th><th>名稱</th><th>金額</th><th>日期</th><th>分類</th></tr></thead><tbody>{shown.map(t=><tr key={t.id}><td><span className={`type-badge ${t.type}`}>{t.type === "income" ? "收入" : "支出"}</span></td><td><b>{t.title}</b></td><td className={t.type === "income" ? "income-cell" : "expense-cell"}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</td><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.category}</td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
+        <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>類型</th><th>名稱</th><th>金額</th><th>日期</th><th>分類</th><th>備註</th><th>操作</th></tr></thead><tbody>{shown.map(t=><tr key={t.id}><td><span className={`type-badge ${t.type}`}>{t.type === "income" ? "收入" : "支出"}</span></td><td><b>{t.title}</b></td><td className={t.type === "income" ? "income-cell" : "expense-cell"}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</td><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.category}</td><td className="note-cell">{t.note || "—"}</td><td><button className="table-edit" onClick={() => openEdit(t)} aria-label={`編輯 ${t.title}`}>編輯</button></td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
       </section>}
       <footer>SelfBank v1 · 個人財務資料，安心留在自己的裝置</footer>
     </main>
 
     {modal && <div className="overlay"><button className="backdrop" onClick={()=>setModal(null)} aria-label="關閉視窗" /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={()=>setModal(null)} aria-label="關閉"><Icon name="close" /></button>
-      {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><button className="primary submit" type="submit">儲存交易</button></form></>}
+      {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>備註<input name="note" maxLength={200} placeholder="選填，最多 200 字" /></label><button className="primary submit" type="submit">儲存交易</button></form></>}
+      {modal === "edit" && editingTx && <><p className="eyebrow">修改既有紀錄</p><h2 id="modal-title">編輯交易</h2><form onSubmit={editTx}><label>類型<select name="type" defaultValue={editingTx.type}><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required defaultValue={editingTx.title} /></label><div className="form-row"><label>金額<input name="amount" type="number" min="0" step="0.01" required defaultValue={editingTx.amount} /></label><label>日期<input name="date" type="date" required defaultValue={editingTx.date} /></label></div><label>分類<select name="category" defaultValue={editingTx.category}>{categories.map(c=><option key={c}>{c}</option>)}</select></label><label>備註<input name="note" maxLength={200} defaultValue={editingTx.note || ""} placeholder="選填，最多 200 字" /></label><p className="modal-copy">交易只提供編輯，不提供刪除功能。</p><button className="primary submit" type="submit">儲存修改</button></form></>}
       {modal === "import" && <><p className="eyebrow">PDF 匯入</p><h2 id="modal-title">匯入交易紀錄</h2><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>會比對日期、金額與交易內容，已匯入的紀錄不會重複新增。</span></div><form onSubmit={importPdf}><label>PDF 檔案<input name="pdf" type="file" accept=".pdf,application/pdf" required /></label><label>PDF 開啟密碼<input name="password" type="password" required autoComplete="off" placeholder="每次匯入時輸入" /></label><p className="modal-copy secure-copy">匯入後會顯示類型、名稱、金額、日期與分類。密碼只用於本次解密，不會保存。</p>{!apiConnected && <p className="api-warning">本機 API 或 HomeAccounting 資料庫尚未連線。</p>}<button className="primary submit" type="submit" disabled={!apiConnected || pdfBusy}>{pdfBusy ? "解密與匯入中…" : "匯入 PDF"}</button></form></>}
       {modal === "recurring" && <><p className="eyebrow">每月固定收支</p><h2 id="modal-title">新增固定收入或支出</h2><form onSubmit={addRecurring}><label>類型<select name="type" defaultValue="expense"><option value="expense">固定支出</option><option value="income">固定收入</option></select></label><label>名稱<input name="title" required placeholder="例如：薪資、房租或訂閱服務" /></label><div className="form-row"><label>每月金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>每月入帳／扣款日<input name="day" type="number" min="1" max="28" required placeholder="例如：15" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><p className="modal-copy">固定收入會自動歸類為收入；選擇 1–28 日可避免短月份日期不存在。</p><button className="primary submit" type="submit">加入固定收支</button></form></>}
     </div></div>}

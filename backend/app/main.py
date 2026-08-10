@@ -41,6 +41,15 @@ class RecurringInput(BaseModel):
     active: bool = True
 
 
+class TransactionUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    category: str = Field(min_length=1, max_length=40)
+    amount: float = Field(ge=0)
+    date: str
+    type: Literal["expense", "income"]
+    note: str | None = Field(default=None, max_length=200)
+
+
 class PdfImportInput(BaseModel):
     filename: str = Field(min_length=1, max_length=200)
     content_base64: str = Field(min_length=1, max_length=20_000_000)
@@ -104,6 +113,14 @@ def transaction_types() -> list[dict]:
 @app.post("/transactions", status_code=201)
 def create_transaction(payload: TransactionInput) -> dict:
     return require_database().create_transaction(payload.model_dump())
+
+
+@app.patch("/transactions/{item_id}")
+def update_transaction(item_id: int, payload: TransactionUpdate) -> dict:
+    updated = require_database().update_transaction(item_id, payload.model_dump())
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return updated
 
 
 @app.post("/imports/pdf")

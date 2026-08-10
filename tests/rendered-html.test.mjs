@@ -40,6 +40,13 @@ test("交易紀錄支援收支與分類交叉篩選", async () => {
   assert.match(page, /全部分類/);
   assert.match(page, /shownSummary/);
   assert.doesNotMatch(page, /shown\.slice\(0,8\)/);
+  for (const text of ["備註", "編輯交易", "儲存修改", "交易只提供編輯，不提供刪除功能"]) assert.match(page, new RegExp(text));
+  assert.match(page, /method: "PATCH"/);
+  assert.match(page, /\/transactions\/\$\{editingTx\.id\}/);
+  assert.doesNotMatch(page, /method: "DELETE"|刪除交易/);
+  const api = await readFile(new URL("../backend/app/main.py", import.meta.url), "utf8");
+  assert.match(api, /@app\.patch\("\/transactions\/\{item_id\}"\)/);
+  assert.doesNotMatch(api, /@app\.delete/);
 });
 
 test("固定扣款保留，外部帳號連動已移除", async () => {
