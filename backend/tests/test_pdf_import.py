@@ -3,7 +3,7 @@ from unittest import TestCase
 
 from pypdf import PdfWriter
 
-from backend.app.pdf_import import PdfPasswordError, extract_pdf_text, parse_statement_text
+from backend.app.pdf_import import PdfPasswordError, extract_pdf_text, parse_fubon_tables, parse_statement_text
 
 
 class PdfImportTests(TestCase):
@@ -27,3 +27,19 @@ class PdfImportTests(TestCase):
         self.assertEqual(rows[0]["amount"], 120)
         self.assertEqual(rows[1]["type"], "income")
         self.assertEqual(rows[1]["amount"], 62000)
+
+    def test_parse_taipei_fubon_table_and_choose_merchant_note(self) -> None:
+        table = [[
+            ["帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註"],
+            ["2026/08/10", "2026/08/10\n02:26:23", "刷卡消費", "69.00", "", "465,024.00", "義美股份有限公司"],
+            ["2026/08/10", "2026/08/10\n02:19:47", "刷卡退貨", "", "219.00", "465,128.00", "連加＊ＬＩＮＥ"],
+            ["2026/08/07", "2026/08/06\n23:05:14", "ＣＤ轉收", "", "16,000.00", "470,289.00", "********13296416"],
+        ]]
+        rows = parse_fubon_tables(table)
+        self.assertEqual(rows[0]["title"], "義美股份有限公司")
+        self.assertEqual(rows[0]["type"], "expense")
+        self.assertEqual(rows[0]["amount"], 69)
+        self.assertEqual(rows[1]["type"], "income")
+        self.assertEqual(rows[1]["amount"], 219)
+        self.assertEqual(rows[2]["title"], "ＣＤ轉收")
+        self.assertEqual(rows[2]["amount"], 16000)

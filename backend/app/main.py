@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, SecretStr
 
 from .database import Database
-from .pdf_import import PdfPasswordError, extract_pdf_text, parse_statement_text
+from .pdf_import import PdfPasswordError, parse_statement_pdf
 
 
 class TransactionInput(BaseModel):
@@ -77,8 +77,8 @@ def import_pdf(payload: PdfImportInput) -> dict:
         raise HTTPException(status_code=422, detail="請選擇 PDF 檔案")
     try:
         pdf_bytes = base64.b64decode(payload.content_base64, validate=True)
-        text = extract_pdf_text(pdf_bytes, payload.password.get_secret_value())
-        return database.import_transactions(parse_statement_text(text))
+        transactions = parse_statement_pdf(pdf_bytes, payload.password.get_secret_value())
+        return database.import_transactions(transactions)
     except PdfPasswordError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
     except (ValueError, binascii.Error) as error:
