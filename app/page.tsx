@@ -52,16 +52,25 @@ export default function Home() {
     const saved = localStorage.getItem("selfbank-v1-transactions");
     const savedCode = localStorage.getItem("selfbank-v1-barcode");
     const savedRecurring = localStorage.getItem("selfbank-v1-recurring");
-    const timer = window.setTimeout(() => {
-      if (saved) { try { setTxs(JSON.parse(saved)); } catch { localStorage.removeItem("selfbank-v1-transactions"); } }
+    const timer = window.setTimeout(async () => {
+      if (pythonApiUrl) {
+        try {
+          const [transactionsResponse, recurringResponse] = await Promise.all([
+            fetch(`${pythonApiUrl}/transactions`), fetch(`${pythonApiUrl}/recurring`),
+          ]);
+          if (!transactionsResponse.ok || !recurringResponse.ok) throw new Error("API unavailable");
+          setTxs(await transactionsResponse.json());
+          setRecurring(await recurringResponse.json());
+        } catch { setToast("無法連接本機資料庫服務"); }
+      } else if (saved) { try { setTxs(JSON.parse(saved)); } catch { localStorage.removeItem("selfbank-v1-transactions"); } }
       if (savedCode) setBarcode(savedCode);
-      if (savedRecurring) { try { setRecurring(JSON.parse(savedRecurring)); } catch { localStorage.removeItem("selfbank-v1-recurring"); } }
+      if (!pythonApiUrl && savedRecurring) { try { setRecurring(JSON.parse(savedRecurring)); } catch { localStorage.removeItem("selfbank-v1-recurring"); } }
       setLoaded(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-  useEffect(() => { if (loaded) localStorage.setItem("selfbank-v1-transactions", JSON.stringify(txs)); }, [txs, loaded]);
-  useEffect(() => { if (loaded) localStorage.setItem("selfbank-v1-recurring", JSON.stringify(recurring)); }, [recurring, loaded]);
+  useEffect(() => { if (loaded && !pythonApiUrl) localStorage.setItem("selfbank-v1-transactions", JSON.stringify(txs)); }, [txs, loaded]);
+  useEffect(() => { if (loaded && !pythonApiUrl) localStorage.setItem("selfbank-v1-recurring", JSON.stringify(recurring)); }, [recurring, loaded]);
 
   const stats = useMemo(() => {
     const income = txs.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
@@ -74,18 +83,32 @@ export default function Home() {
   const activeRecurring = recurring.filter(item => item.active).sort((a, b) => a.day - b.day);
   const recurringTotal = activeRecurring.reduce((sum, item) => sum + item.amount, 0);
 
-  function addTx(e: FormEvent<HTMLFormElement>) {
+  async function addTx(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const type = fd.get("type") as "expense" | "income";
-    setTxs([{ id: Date.now(), title: String(fd.get("title")), category: type === "income" ? "收入" : String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳" }, ...txs]);
+    const candidate = { title: String(fd.get("title")), category: type === "income" ? "收入" : String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳" };
+    let created: Tx = { id: Date.now(), ...candidate };
+    if (pythonApiUrl) {
+      const response = await fetch(`${pythonApiUrl}/transactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
+      if (!response.ok) { setToast("資料庫寫入失敗"); return; }
+      created = await response.json();
+    }
+    setTxs([created, ...txs]);
     setModal(null); setToast("交易已新增"); setTimeout(() => setToast(""), 2500);
   }
 
   function importCsv(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
+      if (pythonApiUrl) {
+        const response = await fetch(`${pythonApiUrl}/imports/csv`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: String(reader.result) }) });
+        const result = await response.json();
+        if (!response.ok) { setToast(result.detail || "CSV 匯入失敗"); return; }
+        setTxs(prev => [...result.created, ...prev]); setModal(null);
+        setToast(`已新增 ${result.created_count} 筆，略過 ${result.skipped_count} 筆重複消費`); setTimeout(() => setToast(""), 3500); return;
+      }
       const lines = String(reader.result).split(/\r?\n/).slice(1).filter(Boolean);
       const parsed = lines.map((line, i) => {
         const [date, title, amount, type = "expense", category = "其他"] = line.split(",").map(v => v.trim());
@@ -141,11 +164,26 @@ export default function Home() {
     }
   }
 
-  function addRecurring(e: FormEvent<HTMLFormElement>) {
+  async function addRecurring(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    setRecurring(prev => [...prev, { id: Date.now(), title: String(fd.get("title")), amount: Number(fd.get("amount")), day: Number(fd.get("day")), category: String(fd.get("category")), active: true }]);
+    const candidate = { title: String(fd.get("title")), amount: Number(fd.get("amount")), day: Number(fd.get("day")), category: String(fd.get("category")), active: true };
+    let created: Recurring = { id: Date.now(), ...candidate };
+    if (pythonApiUrl) {
+      const response = await fetch(`${pythonApiUrl}/recurring`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
+      if (!response.ok) { setToast("資料庫寫入失敗"); return; }
+      created = await response.json();
+    }
+    setRecurring(prev => [...prev, created]);
     setModal(null); setToast("固定扣款已加入"); setTimeout(() => setToast(""), 2500);
+  }
+
+  async function pauseRecurring(item: Recurring) {
+    if (pythonApiUrl) {
+      const response = await fetch(`${pythonApiUrl}/recurring/${item.id}?active=false`, { method: "PATCH" });
+      if (!response.ok) { setToast("資料庫更新失敗"); return; }
+    }
+    setRecurring(prev => prev.map(row => row.id === item.id ? {...row, active:false} : row));
   }
 
   return <div className="shell">
@@ -159,7 +197,7 @@ export default function Home() {
         <button className="nav" onClick={() => document.getElementById("recurring")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />固定扣款</button>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
-      <div className="privacy"><span>●</span><div><b>資料僅存在此裝置</b><small>SelfBank 不會上傳你的財務資料</small></div></div>
+      <div className="privacy"><span>●</span><div><b>{pythonApiUrl ? "已連接本機 SQL Server" : "資料僅存在此裝置"}</b><small>{pythonApiUrl ? "交易由本機 Python API 保存" : "SelfBank 不會上傳你的財務資料"}</small></div></div>
       <div className="profile"><div className="avatar">我</div><div><b>我的帳本</b><small>個人模式</small></div><button aria-label="更多選項">•••</button></div>
     </aside>
 
@@ -185,7 +223,7 @@ export default function Home() {
 
       <section className="panel recurring-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定扣款</p><h3>先替未來的支出留位置</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定扣款</button></div>
         <div className="recurring-summary"><div><span>每月固定支出</span><strong>{money(recurringTotal)}</strong></div><div><span>啟用項目</span><strong>{activeRecurring.length} 筆</strong></div></div>
-        <div className="recurring-list">{activeRecurring.map(item => <div className="recurring-item" key={item.id}><div className="recurring-logo">{item.title.slice(0,1)}</div><div><b>{item.title}</b><span>{item.category} · 每月 {item.day} 日</span></div><time>下次 {nextCharge(item.day)}</time><strong>{money(item.amount)}</strong><button aria-label={`停用 ${item.title}`} onClick={() => setRecurring(prev => prev.map(row => row.id === item.id ? {...row, active:false} : row))}>暫停</button></div>)}</div>
+        <div className="recurring-list">{activeRecurring.map(item => <div className="recurring-item" key={item.id}><div className="recurring-logo">{item.title.slice(0,1)}</div><div><b>{item.title}</b><span>{item.category} · 每月 {item.day} 日</span></div><time>下次 {nextCharge(item.day)}</time><strong>{money(item.amount)}</strong><button aria-label={`停用 ${item.title}`} onClick={() => pauseRecurring(item)}>暫停</button></div>)}</div>
         <p className="recurring-hint">到期項目會列入預估；銀行 CSV 匯入後仍會使用防重複機制比對實際扣款。</p>
       </section>
 

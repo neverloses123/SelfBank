@@ -1,0 +1,27 @@
+import os
+from unittest import TestCase, skipUnless
+
+from backend.app.sqlserver_database import SqlServerDatabase
+
+
+@skipUnless(os.getenv("SELFBANK_TEST_SQLSERVER") == "1", "SQL Server integration test is opt-in")
+class SqlServerIntegrationTests(TestCase):
+    marker = "SelfBank integration test"
+
+    def setUp(self) -> None:
+        self.db = SqlServerDatabase(os.environ["SELFBANK_SQLSERVER_CONNECTION"])
+
+    def tearDown(self) -> None:
+        with self.db.connect() as connection:
+            connection.execute("DELETE FROM dbo.transactions WHERE title = ?", self.marker)
+            connection.execute("DELETE FROM dbo.recurring_payments WHERE title = ?", self.marker)
+
+    def test_transaction_and_recurring_crud(self) -> None:
+        transaction = self.db.create_transaction(
+            {"title": self.marker, "category": "其他", "amount": 123, "date": "2026-08-10", "type": "expense", "source": "自動測試"}
+        )
+        self.assertEqual(transaction["amount"], 123)
+        recurring = self.db.create_recurring(
+            {"title": self.marker, "category": "帳單", "amount": 456, "day": 15, "active": True}
+        )
+        self.assertTrue(self.db.set_recurring_active(recurring["id"], False))

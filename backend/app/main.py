@@ -41,7 +41,17 @@ class PdfImportInput(BaseModel):
     password: SecretStr = Field(min_length=1)
 
 
-database = Database(os.getenv("SELFBANK_DB_PATH", str(Path(__file__).parents[1] / "data" / "selfbank.db")))
+if os.getenv("SELFBANK_DB_BACKEND", "sqlite").lower() == "sqlserver":
+    from .sqlserver_database import SqlServerDatabase
+
+    database = SqlServerDatabase(
+        os.getenv(
+            "SELFBANK_SQLSERVER_CONNECTION",
+            "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1433;DATABASE=SelfBank;Trusted_Connection=yes;TrustServerCertificate=yes;",
+        )
+    )
+else:
+    database = Database(os.getenv("SELFBANK_DB_PATH", str(Path(__file__).parents[1] / "data" / "selfbank.db")))
 app = FastAPI(title="SelfBank API", version="1.0.0", docs_url="/docs")
 
 origins = [origin.strip() for origin in os.getenv("SELFBANK_CORS_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
