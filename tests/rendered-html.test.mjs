@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { isDuplicateTransaction, merchantSimilarity, normalizeMerchant } from "../lib/dedupe.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -25,4 +26,16 @@ test("v1 包含本機保存、CSV 匯入與載具驗證", async () => {
   assert.match(page, /reader\.readAsText\(file\)/);
   assert.ok(page.includes('pattern="/[0-9A-Z.+\\-]{7}"'));
   assert.match(page, /type: type === "income"/);
+});
+
+test("銀行交易會與載具發票去重，且避免誤判", () => {
+  const invoice = { title: "全聯福利中心股份有限公司", amount: 1286, date: "2026-08-10", type: "expense", source: "雲端發票" };
+  const bank = { title: "信用卡消費 全聯福利中心", amount: 1286, date: "2026-08-12", type: "expense", source: "CSV 匯入" };
+  const differentAmount = { ...bank, amount: 1386 };
+  const differentStore = { ...bank, title: "台灣高鐵" };
+  assert.equal(normalizeMerchant(invoice.title), "全聯福利中心");
+  assert.ok(merchantSimilarity(invoice.title, bank.title) >= 0.82);
+  assert.equal(isDuplicateTransaction(bank, invoice), true);
+  assert.equal(isDuplicateTransaction(differentAmount, invoice), false);
+  assert.equal(isDuplicateTransaction(differentStore, invoice), false);
 });

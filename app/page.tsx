@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { isDuplicateTransaction } from "../lib/dedupe";
 
 type Tx = { id: number; title: string; category: string; amount: number; date: string; type: "expense" | "income"; source: string };
 
@@ -69,7 +70,17 @@ export default function Home() {
         const [date, title, amount, type = "expense", category = "其他"] = line.split(",").map(v => v.trim());
         return { id: Date.now() + i, date, title, amount: Math.abs(Number(amount)), type: type === "income" ? "income" as const : "expense" as const, category, source: "CSV 匯入" };
       }).filter(t => t.date && t.title && Number.isFinite(t.amount));
-      setTxs(prev => [...parsed, ...prev]); setModal(null); setToast(`已匯入 ${parsed.length} 筆交易`); setTimeout(() => setToast(""), 2500);
+      const accepted: Tx[] = [];
+      let duplicateCount = 0;
+      for (const candidate of parsed) {
+        const duplicate = [...txs, ...accepted].some(existing => isDuplicateTransaction(candidate, existing));
+        if (duplicate) duplicateCount += 1;
+        else accepted.push(candidate);
+      }
+      setTxs(prev => [...accepted, ...prev]);
+      setModal(null);
+      setToast(`已新增 ${accepted.length} 筆，略過 ${duplicateCount} 筆重複消費`);
+      setTimeout(() => setToast(""), 3500);
     };
     reader.readAsText(file);
   }
@@ -117,7 +128,7 @@ export default function Home() {
     {modal && <div className="overlay"><button className="backdrop" onClick={()=>setModal(null)} aria-label="關閉視窗" /><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={()=>setModal(null)} aria-label="關閉"><Icon name="close" /></button>
       {modal === "add" && <><p className="eyebrow">快速記一筆</p><h2 id="modal-title">新增交易</h2><form onSubmit={addTx}><label>類型<select name="type" defaultValue="expense"><option value="expense">支出</option><option value="income">收入</option></select></label><label>名稱<input name="title" required placeholder="例如：午餐" /></label><div className="form-row"><label>金額<input name="amount" type="number" min="1" required placeholder="0" /></label><label>日期<input name="date" type="date" required defaultValue="2026-08-10" /></label></div><label>分類<select name="category">{categories.map(c=><option key={c}>{c}</option>)}</select></label><button className="primary submit" type="submit">儲存交易</button></form></>}
       {modal === "carrier" && <><p className="eyebrow">快速出示</p><h2 id="modal-title">設定手機載具</h2><p className="modal-copy">請輸入財政部核發、以「/」開頭的 8 碼手機條碼。條碼只會保存在這個瀏覽器。</p><form onSubmit={e=>{e.preventDefault(); const code=String(new FormData(e.currentTarget).get("barcode")).toUpperCase(); setBarcode(code); localStorage.setItem("selfbank-v1-barcode",code); setModal(null);setToast("載具已更新");setTimeout(()=>setToast(""),2500)}}><label>手機條碼<input name="barcode" required pattern="/[0-9A-Z.+\-]{7}" maxLength={8} defaultValue={barcode} /></label><button className="primary submit">儲存載具</button></form></>}
-      {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行 CSV</h2><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類。第一列視為標題列；類型請填 expense 或 income。</p><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></>}
+      {modal === "import" && <><p className="eyebrow">資料匯入</p><h2 id="modal-title">匯入銀行 CSV</h2><p className="modal-copy">欄位順序：日期、名稱、金額、類型、分類。系統會比對金額、店家與三日內的載具發票，自動略過重複消費；類型請填 expense 或 income。</p><div className="dedupe-note"><b>✓ 防重複記帳已開啟</b><span>同一份 CSV 再次匯入也不會重複新增。</span></div><button className="dropzone" onClick={()=>fileRef.current?.click()}><Icon name="upload" /><b>選擇 CSV 檔案</b><span>資料會在你的裝置中處理</span></button><input ref={fileRef} className="hidden" type="file" accept=".csv,text/csv" onChange={importCsv}/></>}
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </div>;
