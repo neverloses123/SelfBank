@@ -38,3 +38,15 @@ class DatabaseTests(TestCase):
         self.assertTrue(item["active"])
         self.assertTrue(self.db.set_recurring_active(item["id"], False))
         self.assertTrue(any(not row["active"] for row in self.db.list_recurring()))
+
+    def test_pdf_columns_are_persisted(self) -> None:
+        transaction = self.db.create_transaction({
+            "title": "義美股份有限公司", "category": "其他", "amount": 69,
+            "date": "2026-08-10", "type": "expense", "source": "台北富邦 PDF 匯入",
+            "transaction_time": "2026/08/10 02:26:23", "summary": "刷卡消費",
+            "expense_amount": 69, "income_amount": None, "balance": 465024,
+            "note": "義美股份有限公司",
+        })
+        self.assertEqual(transaction["summary"], "刷卡消費")
+        self.assertEqual(transaction["balance"], 465024)
+        self.assertEqual(transaction["note"], "義美股份有限公司")

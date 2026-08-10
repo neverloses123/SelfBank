@@ -21,6 +21,12 @@ class TransactionInput(BaseModel):
     date: str
     type: Literal["expense", "income"]
     source: str = Field(default="手動記帳", max_length=40)
+    transaction_time: str | None = None
+    summary: str | None = None
+    expense_amount: float | None = Field(default=None, ge=0)
+    income_amount: float | None = Field(default=None, ge=0)
+    balance: float | None = None
+    note: str | None = None
 
 
 class RecurringInput(BaseModel):

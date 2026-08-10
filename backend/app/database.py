@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     transaction_date TEXT NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('expense', 'income')),
     source TEXT NOT NULL,
+    transaction_time TEXT,
+    summary TEXT,
+    expense_amount REAL,
+    income_amount REAL,
+    balance REAL,
+    note TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date DESC);
@@ -62,12 +68,16 @@ class Database:
             columns = {row[1] for row in connection.execute("PRAGMA table_info(recurring_payments)").fetchall()}
             if "type" not in columns:
                 connection.execute("ALTER TABLE recurring_payments ADD COLUMN type TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income'))")
+            transaction_columns = {row[1] for row in connection.execute("PRAGMA table_info(transactions)").fetchall()}
+            for name, column_type in (("transaction_time", "TEXT"), ("summary", "TEXT"), ("expense_amount", "REAL"), ("income_amount", "REAL"), ("balance", "REAL"), ("note", "TEXT")):
+                if name not in transaction_columns:
+                    connection.execute(f"ALTER TABLE transactions ADD COLUMN {name} {column_type}")
             connection.execute("PRAGMA optimize")
 
     def list_transactions(self, limit: int = 200) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT id, title, category, amount, transaction_date AS date, type, source FROM transactions ORDER BY transaction_date DESC, id DESC LIMIT ?",
+                "SELECT id, title, category, amount, transaction_date AS date, type, source, transaction_time, summary, expense_amount, income_amount, balance, note FROM transactions ORDER BY transaction_date DESC, transaction_time DESC, id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -75,11 +85,11 @@ class Database:
     def create_transaction(self, transaction: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO transactions(title, category, amount, transaction_date, type, source) VALUES (?, ?, ?, ?, ?, ?)",
-                (transaction["title"], transaction["category"], transaction["amount"], transaction["date"], transaction["type"], transaction["source"]),
+                "INSERT INTO transactions(title, category, amount, transaction_date, type, source, transaction_time, summary, expense_amount, income_amount, balance, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (transaction["title"], transaction["category"], transaction["amount"], transaction["date"], transaction["type"], transaction["source"], transaction.get("transaction_time"), transaction.get("summary"), transaction.get("expense_amount"), transaction.get("income_amount"), transaction.get("balance"), transaction.get("note")),
             )
             row = connection.execute(
-                "SELECT id, title, category, amount, transaction_date AS date, type, source FROM transactions WHERE id = ?",
+                "SELECT id, title, category, amount, transaction_date AS date, type, source, transaction_time, summary, expense_amount, income_amount, balance, note FROM transactions WHERE id = ?",
                 (cursor.lastrowid,),
             ).fetchone()
         return dict(row)

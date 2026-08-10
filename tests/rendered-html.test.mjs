@@ -16,7 +16,8 @@ test("SelfBank 首頁可由伺服器正常輸出", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>SelfBank｜我的個人記帳本<\/title>/i);
-  for (const text of ["SelfBank", "新增交易", "手機載具", "所有支出與收入", "全部收支", "全部分類", "財務分析", "固定收支"]) assert.match(html, new RegExp(text));
+  for (const text of ["SelfBank", "新增交易", "資料匯入", "所有支出與收入", "帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註", "財務分析", "固定收支"]) assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /手機載具/);
   assert.doesNotMatch(html, /本月財務異常|最近 7 天|每月固定收入/);
   assert.doesNotMatch(html, /Google 與 Apple 帳號|連結帳號|Apple／iCloud 帳號/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Starter Project/);
@@ -51,11 +52,12 @@ test("固定扣款保留，外部帳號連動已移除", async () => {
   assert.doesNotMatch(page, /setModal\("accounts"\)|Google 帳號|Apple／iCloud 帳號/);
 });
 
-test("v1 包含本機保存、CSV 匯入與載具驗證", async () => {
+test("v1 包含本機保存、CSV 與台北富邦 PDF 匯入", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.match(page, /localStorage\.setItem\("selfbank-v1-transactions"/);
   assert.match(page, /reader\.readAsText\(file\)/);
-  assert.ok(page.includes('pattern="/[0-9A-Z.+\\-]{7}"'));
+  for (const field of ["帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註"]) assert.match(page, new RegExp(field));
+  assert.match(page, /台北富邦交易明細 PDF/);
   assert.match(page, /type: type === "income"/);
 });
 

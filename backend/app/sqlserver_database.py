@@ -19,9 +19,21 @@ BEGIN
         transaction_date DATE NOT NULL,
         type VARCHAR(10) NOT NULL CHECK (type IN ('expense', 'income')),
         source NVARCHAR(40) NOT NULL,
+        transaction_time NVARCHAR(30) NULL,
+        summary NVARCHAR(80) NULL,
+        expense_amount DECIMAL(18,2) NULL,
+        income_amount DECIMAL(18,2) NULL,
+        balance DECIMAL(18,2) NULL,
+        note NVARCHAR(200) NULL,
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;
+IF COL_LENGTH('dbo.transactions', 'transaction_time') IS NULL ALTER TABLE dbo.transactions ADD transaction_time NVARCHAR(30) NULL;
+IF COL_LENGTH('dbo.transactions', 'summary') IS NULL ALTER TABLE dbo.transactions ADD summary NVARCHAR(80) NULL;
+IF COL_LENGTH('dbo.transactions', 'expense_amount') IS NULL ALTER TABLE dbo.transactions ADD expense_amount DECIMAL(18,2) NULL;
+IF COL_LENGTH('dbo.transactions', 'income_amount') IS NULL ALTER TABLE dbo.transactions ADD income_amount DECIMAL(18,2) NULL;
+IF COL_LENGTH('dbo.transactions', 'balance') IS NULL ALTER TABLE dbo.transactions ADD balance DECIMAL(18,2) NULL;
+IF COL_LENGTH('dbo.transactions', 'note') IS NULL ALTER TABLE dbo.transactions ADD note NVARCHAR(200) NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_transactions_date' AND object_id = OBJECT_ID('dbo.transactions'))
     CREATE INDEX idx_transactions_date ON dbo.transactions(transaction_date DESC);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_transactions_match' AND object_id = OBJECT_ID('dbo.transactions'))
@@ -74,7 +86,7 @@ class SqlServerDatabase(Database):
     def list_transactions(self, limit: int = 200) -> list[dict[str, Any]]:
         with self.connect() as connection:
             cursor = connection.execute(
-                "SELECT TOP (?) id, title, category, CAST(amount AS float) AS amount, CONVERT(varchar(10), transaction_date, 23) AS date, type, source FROM dbo.transactions ORDER BY transaction_date DESC, id DESC",
+                "SELECT TOP (?) id, title, category, CAST(amount AS float) AS amount, CONVERT(varchar(10), transaction_date, 23) AS date, type, source, transaction_time, summary, CAST(expense_amount AS float) AS expense_amount, CAST(income_amount AS float) AS income_amount, CAST(balance AS float) AS balance, note FROM dbo.transactions ORDER BY transaction_date DESC, transaction_time DESC, id DESC",
                 limit,
             )
             return [self._dict(cursor, row) for row in cursor.fetchall()]
@@ -82,11 +94,11 @@ class SqlServerDatabase(Database):
     def create_transaction(self, transaction: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO dbo.transactions(title, category, amount, transaction_date, type, source) OUTPUT INSERTED.id, INSERTED.title, INSERTED.category, CAST(INSERTED.amount AS float), CONVERT(varchar(10), INSERTED.transaction_date, 23), INSERTED.type, INSERTED.source VALUES (?, ?, ?, ?, ?, ?)",
-                transaction["title"], transaction["category"], transaction["amount"], transaction["date"], transaction["type"], transaction["source"],
+                "INSERT INTO dbo.transactions(title, category, amount, transaction_date, type, source, transaction_time, summary, expense_amount, income_amount, balance, note) OUTPUT INSERTED.id, INSERTED.title, INSERTED.category, CAST(INSERTED.amount AS float), CONVERT(varchar(10), INSERTED.transaction_date, 23), INSERTED.type, INSERTED.source, INSERTED.transaction_time, INSERTED.summary, CAST(INSERTED.expense_amount AS float), CAST(INSERTED.income_amount AS float), CAST(INSERTED.balance AS float), INSERTED.note VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                transaction["title"], transaction["category"], transaction["amount"], transaction["date"], transaction["type"], transaction["source"], transaction.get("transaction_time"), transaction.get("summary"), transaction.get("expense_amount"), transaction.get("income_amount"), transaction.get("balance"), transaction.get("note"),
             )
             row = cursor.fetchone()
-            return dict(zip(("id", "title", "category", "amount", "date", "type", "source"), row))
+            return dict(zip(("id", "title", "category", "amount", "date", "type", "source", "transaction_time", "summary", "expense_amount", "income_amount", "balance", "note"), row))
 
     def list_recurring(self) -> list[dict[str, Any]]:
         with self.connect() as connection:

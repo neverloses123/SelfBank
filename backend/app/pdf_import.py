@@ -49,7 +49,7 @@ def parse_fubon_tables(tables: list[list[list[Any]]]) -> list[dict[str, Any]]:
         if header_index is None:
             continue
         header = [_clean_cell(cell) for cell in table[header_index]]
-        indexes = {name: next((i for i, cell in enumerate(header) if name in cell), -1) for name in ("帳務日期", "摘要", "支出金額", "存入金額", "附註")}
+        indexes = {name: next((i for i, cell in enumerate(header) if name in cell), -1) for name in ("帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註")}
         if min(indexes.values()) < 0:
             continue
         for row in table[header_index + 1 :]:
@@ -60,8 +60,10 @@ def parse_fubon_tables(tables: list[list[list[Any]]]) -> list[dict[str, Any]]:
                 continue
             summary = _clean_cell(row[indexes["摘要"]])
             note = _clean_cell(row[indexes["附註"]])
+            transaction_time = _clean_cell(row[indexes["交易時間"]])
             expense = _amount(row[indexes["支出金額"]])
             income = _amount(row[indexes["存入金額"]])
+            balance = _amount(row[indexes["即時餘額"]])
             if expense is None and income is None:
                 continue
             is_expense = expense is not None
@@ -74,6 +76,12 @@ def parse_fubon_tables(tables: list[list[list[Any]]]) -> list[dict[str, Any]]:
                     "date": datetime.strptime(raw_date, "%Y/%m/%d").date().isoformat(),
                     "type": "expense" if is_expense else "income",
                     "source": "台北富邦 PDF 匯入",
+                    "transaction_time": transaction_time,
+                    "summary": summary,
+                    "expense_amount": expense,
+                    "income_amount": income,
+                    "balance": balance,
+                    "note": note,
                 }
             )
     return transactions

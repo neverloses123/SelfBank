@@ -1,7 +1,8 @@
 import os
 from unittest import TestCase, skipUnless
 
-from backend.app.sqlserver_database import SqlServerDatabase
+if os.getenv("SELFBANK_TEST_SQLSERVER") == "1":
+    from backend.app.sqlserver_database import SqlServerDatabase
 
 
 @skipUnless(os.getenv("SELFBANK_TEST_SQLSERVER") == "1", "SQL Server integration test is opt-in")
@@ -9,6 +10,7 @@ class SqlServerIntegrationTests(TestCase):
     marker = "SelfBank integration test"
 
     def setUp(self) -> None:
+        from backend.app.sqlserver_database import SqlServerDatabase
         self.db = SqlServerDatabase(os.environ["SELFBANK_SQLSERVER_CONNECTION"])
 
     def tearDown(self) -> None:
