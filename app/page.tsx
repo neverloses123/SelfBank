@@ -42,6 +42,7 @@ export default function Home() {
   const [modal, setModal] = useState<"add" | "carrier" | "import" | "recurring" | null>(null);
   const [toast, setToast] = useState("");
   const [filter, setFilter] = useState("全部");
+  const [categoryFilter, setCategoryFilter] = useState("全部分類");
   const [barcode, setBarcode] = useState("/ABCD123");
   const [loaded, setLoaded] = useState(false);
   const [importType, setImportType] = useState<"csv" | "pdf">("csv");
@@ -79,7 +80,13 @@ export default function Home() {
   }, [txs]);
   const catTotals = useMemo(() => txs.filter(t => t.type === "expense").reduce<Record<string, number>>((a, t) => ({ ...a, [t.category]: (a[t.category] || 0) + t.amount }), {}), [txs]);
   const sortedCats = Object.entries(catTotals).sort((a,b) => b[1]-a[1]);
-  const shown = filter === "全部" ? txs : txs.filter(t => t.type === filter);
+  const transactionCategories = useMemo(() => Array.from(new Set(txs.map(t => t.category))).sort((a, b) => a.localeCompare(b, "zh-TW")), [txs]);
+  const shown = useMemo(() => txs.filter(t => (filter === "全部" || t.type === filter) && (categoryFilter === "全部分類" || t.category === categoryFilter)), [txs, filter, categoryFilter]);
+  const shownSummary = useMemo(() => {
+    const income = shown.filter(t => t.type === "income").reduce((sum, item) => sum + item.amount, 0);
+    const expense = shown.filter(t => t.type === "expense").reduce((sum, item) => sum + item.amount, 0);
+    return { income, expense, net: income - expense };
+  }, [shown]);
   const activeRecurring = recurring.filter(item => item.active).sort((a, b) => a.day - b.day);
   const recurringTotal = activeRecurring.reduce((sum, item) => sum + item.amount, 0);
 
@@ -227,8 +234,10 @@ export default function Home() {
         <p className="recurring-hint">到期項目會列入預估；銀行 CSV 匯入後仍會使用防重複機制比對實際扣款。</p>
       </section>
 
-      <section className="panel transactions" id="transactions"><div className="panel-head"><div><p className="eyebrow">近期動態</p><h3>最近交易</h3></div><div className="filters">{[["全部","全部"],["支出","expense"],["收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} onClick={()=>setFilter(value)}>{label}</button>)}</div></div>
-        <div className="tx-list">{shown.slice(0,8).map(t=><div className="tx" key={t.id}><div className={`tx-icon ${t.type}`}>{t.type === "income" ? "↙" : t.category.slice(0,1)}</div><div className="tx-title"><b>{t.title}</b><span>{t.category} · {t.source}</span></div><time>{t.date.slice(5).replace("-","/")}</time><strong className={t.type}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</strong></div>)}</div>
+      <section className="panel transactions" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div>
+        <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
+        <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
+        <div className="tx-list" aria-live="polite">{shown.length ? shown.map(t=><div className="tx" key={t.id}><div className={`tx-icon ${t.type}`}>{t.type === "income" ? "↙" : t.category.slice(0,1)}</div><div className="tx-title"><b>{t.title}</b><span>{t.category} · {t.source}</span></div><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time><strong className={t.type}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</strong></div>) : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
       </section>
       <footer>SelfBank v1 · 個人財務資料，安心留在自己的裝置</footer>
     </main>

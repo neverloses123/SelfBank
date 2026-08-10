@@ -16,9 +16,19 @@ test("SelfBank 首頁可由伺服器正常輸出", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>SelfBank｜我的個人記帳本<\/title>/i);
-  for (const text of ["SelfBank", "新增交易", "手機載具", "最近交易", "本月預算", "每月固定扣款"]) assert.match(html, new RegExp(text));
+  for (const text of ["SelfBank", "新增交易", "手機載具", "所有支出與收入", "全部收支", "全部分類", "本月預算", "每月固定扣款"]) assert.match(html, new RegExp(text));
   assert.doesNotMatch(html, /Google 與 Apple 帳號|連結帳號|Apple／iCloud 帳號/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Starter Project/);
+});
+
+test("交易紀錄支援收支與分類交叉篩選", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /categoryFilter/);
+  assert.match(page, /只看支出/);
+  assert.match(page, /只看收入/);
+  assert.match(page, /全部分類/);
+  assert.match(page, /shownSummary/);
+  assert.doesNotMatch(page, /shown\.slice\(0,8\)/);
 });
 
 test("固定扣款保留，外部帳號連動已移除", async () => {
