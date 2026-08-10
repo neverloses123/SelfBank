@@ -47,6 +47,7 @@ test("固定收支與財務分析為獨立頁面", async () => {
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /--green:#0085ca/);
   assert.match(css, /linear-gradient\(115deg,#0085ca,#0067a0\)/);
+  assert.match(css, /font-variant-numeric:tabular-nums lining-nums/);
 });
 
 test("交易紀錄支援收支與分類交叉篩選", async () => {
