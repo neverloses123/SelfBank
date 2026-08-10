@@ -30,6 +30,8 @@ dev-server*.log
 /backend/data/
 *.db-wal
 *.db-shm
+__pycache__/
+*.py[cod]
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
