@@ -7,7 +7,7 @@ from pathlib import Path
 import pyodbc
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from backend.app.sqlserver_database import SCHEMA
+from backend.app.sqlserver_database import SCHEMA, SCHEMA_COMMENTS, apply_schema_comments
 
 
 MASTER_CONNECTION = os.getenv(
@@ -38,6 +38,7 @@ def main() -> None:
 
     with pyodbc.connect(DATABASE_CONNECTION, autocommit=False, timeout=10) as connection:
         connection.execute(SCHEMA)
+        apply_schema_comments(connection)
         connection.commit()
         tables = [
             row[0]
@@ -48,6 +49,16 @@ def main() -> None:
             ).fetchall()
         ]
         print("tables=" + ",".join(tables))
+        expected_comments = sum(1 + len(columns) for _, columns in SCHEMA_COMMENTS.values())
+        comment_count = connection.execute(
+            "SELECT COUNT(*) FROM sys.extended_properties ep "
+            "JOIN sys.objects o ON o.object_id = ep.major_id "
+            "WHERE ep.name = N'MS_Description' AND o.name IN "
+            "('transactions','transaction_categories','transaction_types','recurring_payments')"
+        ).fetchone()[0]
+        if comment_count != expected_comments:
+            raise RuntimeError(f"欄位註解不完整：預期 {expected_comments}，實際 {comment_count}")
+        print(f"schema_comments={comment_count}")
         print(f"transactions={connection.execute('SELECT COUNT(*) FROM dbo.transactions').fetchone()[0]}")
         print(f"recurring_payments={connection.execute('SELECT COUNT(*) FROM dbo.recurring_payments').fetchone()[0]}")
 

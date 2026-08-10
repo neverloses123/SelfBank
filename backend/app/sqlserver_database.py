@@ -79,6 +79,84 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_recurring_active_day'
     CREATE INDEX idx_recurring_active_day ON dbo.recurring_payments(active, charge_day);
 """
 
+SCHEMA_COMMENTS: dict[str, tuple[str, dict[str, str]]] = {
+    "transactions": (
+        "交易紀錄：保存所有收入與支出",
+        {
+            "id": "交易編號（系統自動產生）",
+            "title": "名稱／交易對象",
+            "category": "分類，例如餐飲、交通或醫療",
+            "amount": "交易金額（正數）",
+            "transaction_date": "交易日期",
+            "type": "類型：income 為收入，expense 為支出",
+            "source": "資料來源，例如 PDF 匯入或手動記帳",
+            "transaction_time": "銀行紀錄中的交易時間",
+            "summary": "銀行紀錄中的交易摘要",
+            "expense_amount": "銀行紀錄中的支出金額",
+            "income_amount": "銀行紀錄中的存入／收入金額",
+            "balance": "該筆交易完成後的即時餘額",
+            "note": "銀行紀錄附註或補充說明",
+            "created_at": "資料建立時間（UTC）",
+        },
+    ),
+    "transaction_categories": (
+        "交易分類參照表",
+        {
+            "id": "分類編號（系統自動產生）",
+            "name": "分類中文名稱",
+            "sort_order": "分類顯示順序",
+        },
+    ),
+    "transaction_types": (
+        "交易類型參照表",
+        {
+            "code": "類型代碼：income 或 expense",
+            "name": "類型中文名稱：收入或支出",
+        },
+    ),
+    "recurring_payments": (
+        "每月固定收入與固定支出",
+        {
+            "id": "固定收支編號（系統自動產生）",
+            "title": "固定收支名稱",
+            "category": "固定收支分類",
+            "amount": "每月固定金額",
+            "charge_day": "每月入帳或扣款日（1 至 28 日）",
+            "type": "類型：income 為固定收入，expense 為固定支出",
+            "active": "是否啟用：1 為啟用，0 為停用",
+            "created_at": "資料建立時間（UTC）",
+        },
+    ),
+}
+
+
+def apply_schema_comments(connection: pyodbc.Connection) -> None:
+    for table_name, (table_description, columns) in SCHEMA_COMMENTS.items():
+        table_exists = connection.execute(
+            "SELECT 1 FROM sys.extended_properties WHERE class = 1 AND major_id = OBJECT_ID(?) AND minor_id = 0 AND name = N'MS_Description'",
+            f"dbo.{table_name}",
+        ).fetchone()
+        table_procedure = "sp_updateextendedproperty" if table_exists else "sp_addextendedproperty"
+        connection.execute(
+            f"EXEC sys.{table_procedure} @name=N'MS_Description', @value=?, @level0type=N'SCHEMA', @level0name=N'dbo', @level1type=N'TABLE', @level1name=?",
+            table_description,
+            table_name,
+        )
+        for column_name, description in columns.items():
+            column_exists = connection.execute(
+                "SELECT 1 FROM sys.extended_properties WHERE class = 1 AND major_id = OBJECT_ID(?) AND minor_id = COLUMNPROPERTY(OBJECT_ID(?), ?, 'ColumnId') AND name = N'MS_Description'",
+                f"dbo.{table_name}",
+                f"dbo.{table_name}",
+                column_name,
+            ).fetchone()
+            column_procedure = "sp_updateextendedproperty" if column_exists else "sp_addextendedproperty"
+            connection.execute(
+                f"EXEC sys.{column_procedure} @name=N'MS_Description', @value=?, @level0type=N'SCHEMA', @level0name=N'dbo', @level1type=N'TABLE', @level1name=?, @level2type=N'COLUMN', @level2name=?",
+                description,
+                table_name,
+                column_name,
+            )
+
 
 class SqlServerDatabase(Database):
     def __init__(self, connection_string: str):
@@ -104,6 +182,7 @@ class SqlServerDatabase(Database):
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.execute(SCHEMA)
+            apply_schema_comments(connection)
 
     def health_check(self) -> dict[str, str]:
         with self.connect() as connection:
