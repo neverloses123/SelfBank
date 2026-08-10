@@ -114,3 +114,13 @@ npm.cmd install
 - 不要把銀行 PDF 密碼寫進 README、環境檔、GitHub 或程式碼。
 - `.env.local` 僅保存本機 API 網址，不保存 Windows 或資料庫密碼。
 - 線上 SelfBank 網址無法寫入你電腦上的 localhost SQL Server；需要記帳時請使用 `http://localhost:3000`。
+
+## 七、首次建立 HomeAccounting
+
+只需在第一次安裝，或確認資料庫遺失時執行：
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\setup-homeaccounting.py
+```
+
+這個指令會建立 `HomeAccounting` 與正式資料表，但不會新增任何交易或固定收支假資料。完成後再執行 `scripts\start-selfbank.ps1`。
