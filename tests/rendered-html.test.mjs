@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { isDuplicateTransaction, merchantSimilarity, normalizeMerchant } from "../lib/dedupe.ts";
 
-async function render() {
+async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
-  return worker.fetch(new Request("http://localhost/", { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
+  return worker.fetch(new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
 }
 
 test("SelfBank 首頁可由伺服器正常輸出", async () => {
@@ -16,9 +16,19 @@ test("SelfBank 首頁可由伺服器正常輸出", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>SelfBank｜我的個人記帳本<\/title>/i);
-  for (const text of ["SelfBank", "新增交易", "手機載具", "所有支出與收入", "全部收支", "全部分類", "本月預算", "每月固定收支", "固定收入", "固定支出"]) assert.match(html, new RegExp(text));
+  for (const text of ["SelfBank", "新增交易", "手機載具", "所有支出與收入", "全部收支", "全部分類", "財務分析", "固定收支"]) assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /本月財務異常|最近 7 天|每月固定收入/);
   assert.doesNotMatch(html, /Google 與 Apple 帳號|連結帳號|Apple／iCloud 帳號/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Starter Project/);
+});
+
+test("固定收支與財務分析為獨立頁面", async () => {
+  const recurringHtml = await (await render("/recurring")).text();
+  for (const text of ["每月固定收入", "每月固定支出", "預估淨收入"]) assert.match(recurringHtml, new RegExp(text));
+  assert.doesNotMatch(recurringHtml, /所有支出與收入|本月財務異常/);
+  const analysisHtml = await (await render("/analysis")).text();
+  for (const text of ["本月財務異常", "最近 7 天", "支出分析", "本月盈虧", "儲蓄率", "固定與可變支出", "預估月底總支出"]) assert.match(analysisHtml, new RegExp(text));
+  assert.doesNotMatch(analysisHtml, /所有支出與收入|每月固定收入/);
 });
 
 test("交易紀錄支援收支與分類交叉篩選", async () => {

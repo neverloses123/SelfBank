@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { isDuplicateTransaction } from "../lib/dedupe";
 
 type Tx = { id: number; title: string; category: string; amount: number; date: string; type: "expense" | "income"; source: string };
@@ -37,7 +38,7 @@ function Icon({ name }: { name: string }) {
   return <span className="icon" aria-hidden="true">{icons[name]}</span>;
 }
 
-export default function Home() {
+export function SelfBankApp({ view = "transactions" }: { view?: "transactions" | "recurring" | "analysis" }) {
   const [txs, setTxs] = useState<Tx[]>(seed);
   const [recurring, setRecurring] = useState<Recurring[]>(recurringSeed);
   const [modal, setModal] = useState<"add" | "carrier" | "import" | "recurring" | null>(null);
@@ -93,6 +94,14 @@ export default function Home() {
   const visibleRecurring = activeRecurring.filter(item => recurringFilter === "all" || item.type === recurringFilter);
   const recurringExpenseTotal = activeRecurring.filter(item => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
   const recurringIncomeTotal = activeRecurring.filter(item => item.type === "income").reduce((sum, item) => sum + item.amount, 0);
+  const topExpenseCategory = sortedCats[0];
+  const projectedExpense = stats.expense + recurringExpenseTotal;
+  const variableShare = projectedExpense ? Math.round(stats.expense / projectedExpense * 100) : 0;
+  const pageMeta = {
+    transactions: ["交易紀錄", "查看、分類並管理所有收入與支出。"],
+    recurring: ["固定收支", "安排每月固定收入與固定支出。"],
+    analysis: ["財務分析", "看懂趨勢、盈虧、儲蓄率與本月異常。"],
+  }[view];
 
   async function addTx(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -202,11 +211,10 @@ export default function Home() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">S</span><span>SelfBank</span></div>
       <nav aria-label="主要選單">
-        <button className="nav active"><Icon name="home" />總覽</button>
-        <button className="nav" onClick={() => document.getElementById("transactions")?.scrollIntoView({behavior:"smooth"})}><Icon name="list" />交易紀錄</button>
-        <button className="nav" onClick={() => document.getElementById("budget")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />預算規劃</button>
+        <Link className={`nav ${view === "transactions" ? "active" : ""}`} href="/"><Icon name="list" />交易紀錄</Link>
+        <Link className={`nav ${view === "recurring" ? "active" : ""}`} href="/recurring"><Icon name="budget" />固定收支</Link>
+        <Link className={`nav ${view === "analysis" ? "active" : ""}`} href="/analysis"><Icon name="home" />財務分析</Link>
         <button className="nav" onClick={() => setModal("carrier")}><Icon name="card" />手機載具</button>
-        <button className="nav" onClick={() => document.getElementById("recurring")?.scrollIntoView({behavior:"smooth"})}><Icon name="budget" />固定收支</button>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
       <div className="privacy"><span>●</span><div><b>{pythonApiUrl ? "已連接本機 SQL Server" : "資料僅存在此裝置"}</b><small>{pythonApiUrl ? "交易由本機 Python API 保存" : "SelfBank 不會上傳你的財務資料"}</small></div></div>
@@ -214,9 +222,11 @@ export default function Home() {
     </aside>
 
     <main>
-      <header><div><p className="eyebrow">2026 年 8 月</p><h1>早安，今天也好好掌握生活。</h1></div><div className="header-actions"><button className="circle" aria-label="通知"><Icon name="bell" /></button><button className="primary" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></header>
+      <header><div><p className="eyebrow">SelfBank · 2026 年 8 月</p><h1>{pageMeta[0]}</h1><p className="page-description">{pageMeta[1]}</p></div><div className="header-actions"><button className="circle" aria-label="通知"><Icon name="bell" /></button>{view === "transactions" && <button className="primary" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button>}{view === "recurring" && <button className="primary" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button>}</div></header>
+      {view === "analysis" && <>
+      <section className="anomaly-panel"><div className="anomaly-title"><span>⚠</span><div><p className="eyebrow">主動偵測</p><h2>本月財務異常</h2></div></div><div className="anomaly-grid"><div><b>{topExpenseCategory?.[0] || "尚無支出"}支出 {money(topExpenseCategory?.[1] || 0)}</b><span>{topExpenseCategory ? "目前為本月最高支出分類" : "新增交易後開始分析"}</span></div><div><b>可變支出占預估總支出 {variableShare}%</b><span>{variableShare >= 70 ? "占比偏高，建議檢查非固定消費" : "目前仍在可控範圍"}</span></div><div><b>預估月底總支出 {money(projectedExpense)}</b><span>包含目前支出與尚未入帳的固定支出</span></div><div><b>近 6 個月比較：資料累積中</b><span>資料滿 6 個月後啟用平均、次數與連續上升警示</span></div></div></section>
       <section className="hero-card">
-        <div><p>本月還可以安心使用</p><h2>{money(stats.balance)}</h2><span className="trend">↑ 較上月多 8.4%</span></div>
+        <div><p>本月盈虧</p><h2>{money(stats.balance)}</h2><span className="trend">收入減去支出</span></div>
         <div className="hero-stats"><div><span>本月收入</span><b>{money(stats.income)}</b></div><div><span>本月支出</span><b>{money(stats.expense)}</b></div><div><span>儲蓄率</span><b>{stats.income ? Math.max(0, Math.round(stats.balance/stats.income*100)) : 0}%</b></div></div>
       </section>
 
@@ -230,21 +240,22 @@ export default function Home() {
 
       <section className="grid-bottom">
         <article className="panel trend-card"><div className="panel-head"><div><p className="eyebrow">消費趨勢</p><h3>最近 7 天</h3></div><b>日均 {money(Math.round(stats.expense/7))}</b></div><div className="chart" aria-label="最近七天支出長條圖">{[42,72,35,88,55,28,64].map((h,i)=><div className="bar-col" key={i}><span className={i===3?"highlight":""} style={{height:`${h}%`}}></span><small>{["一","二","三","四","五","六","日"][i]}</small></div>)}</div></article>
-        <article className="panel budget-card" id="budget"><div className="panel-head"><div><p className="eyebrow">本月預算</p><h3>守住生活的餘裕</h3></div><b>32%</b></div><div className="progress"><span style={{width:`${Math.min(100,stats.expense/15000*100)}%`}}></span></div><div className="budget-values"><span>已使用 <b>{money(stats.expense)}</b></span><span>預算 <b>{money(15000)}</b></span></div><p className="budget-note">照目前速度，月底預計可以剩下 {money(Math.max(0,15000-stats.expense))}。</p></article>
+        <article className="panel cost-structure"><div className="panel-head"><div><p className="eyebrow">支出結構</p><h3>固定與可變支出</h3></div><b>{money(projectedExpense)}</b></div><div className="cost-table"><div><span>固定支出</span><b>{money(recurringExpenseTotal)}</b><small>{projectedExpense ? Math.round(recurringExpenseTotal/projectedExpense*100) : 0}%</small></div><div><span>可變支出</span><b>{money(stats.expense)}</b><small>{variableShare}%</small></div><div className="total"><span>預估總支出</span><b>{money(projectedExpense)}</b><small>100%</small></div></div></article>
       </section>
+      </>}
 
-      <section className="panel recurring-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定收支</p><h3>收入與支出都先安排好</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button></div>
+      {view === "recurring" && <section className="panel recurring-panel page-panel" id="recurring"><div className="panel-head"><div><p className="eyebrow">每月固定收支</p><h3>收入與支出都先安排好</h3></div><button className="primary compact" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button></div>
         <div className="recurring-summary"><div className="income-card"><span>每月固定收入</span><strong>{money(recurringIncomeTotal)}</strong></div><div><span>每月固定支出</span><strong>{money(recurringExpenseTotal)}</strong></div><div><span>預估淨收入</span><strong>{money(recurringIncomeTotal - recurringExpenseTotal)}</strong></div></div>
         <div className="recurring-tabs filters" aria-label="固定收支篩選">{[["全部","all"],["固定支出","expense"],["固定收入","income"]].map(([label,value]) => <button key={value} aria-pressed={recurringFilter === value} className={recurringFilter === value ? "selected" : ""} onClick={() => setRecurringFilter(value as "all" | "expense" | "income")}>{label}</button>)}</div>
         <div className="recurring-list">{visibleRecurring.map(item => <div className={`recurring-item ${item.type}`} key={item.id}><div className="recurring-logo">{item.type === "income" ? "+" : "−"}</div><div><b>{item.title}</b><span>{item.type === "income" ? "固定收入" : "固定支出"} · {item.category} · 每月 {item.day} 日</span></div><time>下次 {nextCharge(item.day)}</time><strong>{item.type === "income" ? "+" : "−"}{money(item.amount)}</strong><button aria-label={`停用 ${item.title}`} onClick={() => pauseRecurring(item)}>暫停</button></div>)}</div>
         <p className="recurring-hint">固定收支用於預估；匯入銀行紀錄時仍會套用防重複規則，以實際入帳為準。</p>
-      </section>
+      </section>}
 
-      <section className="panel transactions" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div>
+      {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div>
         <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
         <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
         <div className="tx-list" aria-live="polite">{shown.length ? shown.map(t=><div className="tx" key={t.id}><div className={`tx-icon ${t.type}`}>{t.type === "income" ? "↙" : t.category.slice(0,1)}</div><div className="tx-title"><b>{t.title}</b><span>{t.category} · {t.source}</span></div><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time><strong className={t.type}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</strong></div>) : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
-      </section>
+      </section>}
       <footer>SelfBank v1 · 個人財務資料，安心留在自己的裝置</footer>
     </main>
 
@@ -256,4 +267,8 @@ export default function Home() {
     </div></div>}
     {toast && <div className="toast">✓ {toast}</div>}
   </div>;
+}
+
+export default function Home() {
+  return <SelfBankApp view="transactions" />;
 }
