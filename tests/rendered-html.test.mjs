@@ -37,6 +37,16 @@ test("固定收支與財務分析為獨立頁面", async () => {
   assert.match(page, /最近 7 天沒有支出資料/);
   assert.match(page, /本月沒有支出資料/);
   assert.doesNotMatch(page, /\[42,72,35,88,55,28,64\]|stats\.expense\/7|sortedCats\.slice\(0,4\)/);
+  assert.match(page, /projectedIncome = stats\.income \+ recurringIncomeTotal/);
+  assert.match(page, /projectedExpense = stats\.expense \+ recurringExpenseTotal/);
+  assert.match(page, /預估本月盈虧/);
+  assert.match(page, /exports\/analysis-pdf/);
+  assert.match(page, /匯出財務分析 PDF/);
+  assert.doesNotMatch(page, /view === "recurring" && <div className="header-actions"/);
+  assert.doesNotMatch(page, /更多選項|•••/);
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /--green:#0085ca/);
+  assert.match(css, /linear-gradient\(115deg,#0085ca,#0067a0\)/);
 });
 
 test("交易紀錄支援收支與分類交叉篩選", async () => {

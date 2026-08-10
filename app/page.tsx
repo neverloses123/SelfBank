@@ -120,7 +120,10 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   const recurringExpenseTotal = activeRecurring.filter(item => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
   const recurringIncomeTotal = activeRecurring.filter(item => item.type === "income").reduce((sum, item) => sum + item.amount, 0);
   const topExpenseCategory = sortedCats[0];
+  const projectedIncome = stats.income + recurringIncomeTotal;
   const projectedExpense = stats.expense + recurringExpenseTotal;
+  const projectedBalance = projectedIncome - projectedExpense;
+  const projectedSavingsRate = projectedIncome ? Math.max(0, Math.round(projectedBalance / projectedIncome * 100)) : 0;
   const variableShare = projectedExpense ? Math.round(stats.expense / projectedExpense * 100) : 0;
   const pageMeta = {
     transactions: ["交易紀錄", "查看、分類並管理所有收入與支出。"],
@@ -207,6 +210,20 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     } catch { setToast("PDF 匯出失敗，請確認本機 API 已啟動"); setTimeout(() => setToast(""), 3000); }
   }
 
+  async function exportAnalysisPdf() {
+    if (!apiConnected) { setToast("SQL Server 未連線，無法匯出財務分析 PDF"); setTimeout(() => setToast(""), 3000); return; }
+    try {
+      const response = await fetch(`${pythonApiUrl}/exports/analysis-pdf`);
+      if (!response.ok) throw new Error("財務分析 PDF 匯出失敗");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `SelfBank-財務分析-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+      setToast("財務分析 PDF 已匯出"); setTimeout(() => setToast(""), 2500);
+    } catch { setToast("財務分析 PDF 匯出失敗，請確認本機 API 已啟動"); setTimeout(() => setToast(""), 3000); }
+  }
+
   async function addRecurring(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -237,16 +254,16 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
         <div className="privacy"><span>●</span><div><b>{connectionStatus === "connected" ? "已連接本機 SQL Server" : connectionStatus === "database-disconnected" ? "SQL Server HomeAccounting 未連線" : connectionStatus === "checking" ? "正在檢查本機連線" : "本機 Python API 未連線"}</b><small>{connectionStatus === "connected" ? "API health check 與資料庫查詢皆成功" : connectionStatus === "database-disconnected" ? "API 可連線，但資料庫 health check 失敗" : connectionStatus === "checking" ? "正在執行 API 與資料庫 health check" : "無法連上 localhost:8000"}</small></div></div>
-      <div className="profile"><div className="avatar">我</div><div><b>我的帳本</b><small>個人模式</small></div><button aria-label="更多選項">•••</button></div>
+      <div className="profile"><div className="avatar">我</div><div><b>我的帳本</b><small>個人模式</small></div></div>
     </aside>
 
     <main>
-      <header><div><p className="eyebrow">SelfBank · 2026 年 8 月</p><h1>{pageMeta[0]}</h1><p className="page-description">{pageMeta[1]}</p></div>{view === "recurring" && <div className="header-actions"><button className="primary" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button></div>}</header>
+      <header><div><p className="eyebrow">SelfBank · 2026 年 8 月</p><h1>{pageMeta[0]}</h1><p className="page-description">{pageMeta[1]}</p></div>{view === "analysis" && <div className="header-actions"><button className="primary" onClick={exportAnalysisPdf} aria-label="匯出財務分析 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button></div>}</header>
       {view === "analysis" && <>
       <section className="anomaly-panel"><div className="anomaly-title"><span>⚠</span><div><p className="eyebrow">主動偵測</p><h2>本月財務異常</h2></div></div><div className="anomaly-grid"><div><b>{topExpenseCategory?.[0] || "尚無支出"}支出 {money(topExpenseCategory?.[1] || 0)}</b><span>{topExpenseCategory ? "目前為本月最高支出分類" : "新增交易後開始分析"}</span></div><div><b>可變支出占預估總支出 {variableShare}%</b><span>{variableShare >= 70 ? "占比偏高，建議檢查非固定消費" : "目前仍在可控範圍"}</span></div><div><b>預估月底總支出 {money(projectedExpense)}</b><span>包含目前支出與尚未入帳的固定支出</span></div><div><b>近 6 個月比較：資料累積中</b><span>資料滿 6 個月後啟用平均、次數與連續上升警示</span></div></div></section>
       <section className="hero-card">
-        <div><p>本月盈虧</p><h2>{money(stats.balance)}</h2><span className="trend">收入減去支出</span></div>
-        <div className="hero-stats"><div><span>本月收入</span><b>{money(stats.income)}</b></div><div><span>本月支出</span><b>{money(stats.expense)}</b></div><div><span>儲蓄率</span><b>{stats.income ? Math.max(0, Math.round(stats.balance/stats.income*100)) : 0}%</b></div></div>
+        <div><p>預估本月盈虧</p><h2>{money(projectedBalance)}</h2><span className="trend">實際交易加上啟用中的固定收支</span></div>
+        <div className="hero-stats"><div><span>預估本月收入</span><b>{money(projectedIncome)}</b></div><div><span>預估本月支出</span><b>{money(projectedExpense)}</b></div><div><span>預估儲蓄率</span><b>{projectedSavingsRate}%</b></div></div>
       </section>
 
       <section className="grid-top analysis-grid">

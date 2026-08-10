@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 from .database import Database
 from .pdf_import import PdfPasswordError, parse_statement_pdf
-from .pdf_export import build_transactions_pdf
+from .pdf_export import build_financial_analysis_pdf, build_transactions_pdf
 
 
 class TransactionInput(BaseModel):
@@ -143,6 +143,16 @@ def export_pdf() -> StreamingResponse:
     return StreamingResponse(
         io.BytesIO(content), media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="selfbank-transactions.pdf"'},
+    )
+
+
+@app.get("/exports/analysis-pdf")
+def export_analysis_pdf() -> StreamingResponse:
+    db = require_database()
+    content = build_financial_analysis_pdf(db.list_transactions(limit=10_000), db.list_recurring())
+    return StreamingResponse(
+        io.BytesIO(content), media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="selfbank-financial-analysis.pdf"'},
     )
 
 
