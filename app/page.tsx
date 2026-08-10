@@ -6,16 +6,16 @@ type Tx = { id: number; title: string; category: string; amount: number; date: s
 type Recurring = { id: number; title: string; amount: number; day: number; category: string; type: "expense" | "income"; active: boolean };
 
 const seed: Tx[] = [
-  { id: 1, title: "全聯福利中心", category: "日常採買", amount: 1286, date: "2026-08-10", type: "expense", source: "手動記帳" },
+  { id: 1, title: "全聯福利中心", category: "日用品", amount: 1286, date: "2026-08-10", type: "expense", source: "手動記帳" },
   { id: 2, title: "台灣高鐵", category: "交通", amount: 1490, date: "2026-08-09", type: "expense", source: "手動記帳" },
-  { id: 3, title: "八月薪資", category: "收入", amount: 62000, date: "2026-08-08", type: "income", source: "銀行匯入" },
+  { id: 3, title: "八月薪資", category: "股票", amount: 62000, date: "2026-08-08", type: "income", source: "銀行匯入" },
   { id: 4, title: "巷口咖啡", category: "餐飲", amount: 165, date: "2026-08-08", type: "expense", source: "手動記帳" },
-  { id: 5, title: "中華電信", category: "帳單", amount: 899, date: "2026-08-07", type: "expense", source: "銀行匯入" },
-  { id: 6, title: "誠品線上", category: "學習", amount: 780, date: "2026-08-06", type: "expense", source: "手動記帳" },
+  { id: 5, title: "中華電信", category: "日用品", amount: 899, date: "2026-08-07", type: "expense", source: "銀行匯入" },
+  { id: 6, title: "誠品線上", category: "娛樂", amount: 780, date: "2026-08-06", type: "expense", source: "手動記帳" },
 ];
 
-const categories = ["餐飲", "日常採買", "交通", "帳單", "娛樂", "學習", "醫療", "其他"];
-const colors: Record<string, string> = { "日常採買": "#ff7a59", "交通": "#5b7cfa", "餐飲": "#ffc857", "帳單": "#37b899", "學習": "#9a72d5", "其他": "#a5adba" };
+const categories = ["餐飲", "日用品", "娛樂", "交通", "股票", "醫療"];
+const colors: Record<string, string> = { "日用品": "#ff7a59", "交通": "#5b7cfa", "餐飲": "#ffc857", "娛樂": "#37b899", "股票": "#9a72d5", "醫療": "#a5adba" };
 const money = (n: number) => new Intl.NumberFormat("zh-TW", { style: "currency", currency: "TWD", maximumFractionDigits: 0 }).format(n);
 const pythonApiUrl = process.env.NEXT_PUBLIC_SELFBANK_API_URL || "";
 const recurringSeed: Recurring[] = [
@@ -46,6 +46,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   const [recurringFilter, setRecurringFilter] = useState<"all" | "expense" | "income">("all");
   const [loaded, setLoaded] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [apiConnected, setApiConnected] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("selfbank-v1-transactions");
@@ -57,9 +58,10 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
             fetch(`${pythonApiUrl}/transactions`), fetch(`${pythonApiUrl}/recurring`),
           ]);
           if (!transactionsResponse.ok || !recurringResponse.ok) throw new Error("API unavailable");
+          setApiConnected(true);
           setTxs(await transactionsResponse.json());
           setRecurring((await recurringResponse.json()).map((item: Recurring) => ({ ...item, type: item.type || "expense" })));
-        } catch { setToast("無法連接本機資料庫服務"); }
+        } catch { setApiConnected(false); }
       } else if (saved) { try { setTxs(JSON.parse(saved)); } catch { localStorage.removeItem("selfbank-v1-transactions"); } }
       if (!pythonApiUrl && savedRecurring) { try { setRecurring(JSON.parse(savedRecurring).map((item: Recurring) => ({ ...item, type: item.type || "expense" }))); } catch { localStorage.removeItem("selfbank-v1-recurring"); } }
       setLoaded(true);
@@ -76,7 +78,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
   }, [txs]);
   const catTotals = useMemo(() => txs.filter(t => t.type === "expense").reduce<Record<string, number>>((a, t) => ({ ...a, [t.category]: (a[t.category] || 0) + t.amount }), {}), [txs]);
   const sortedCats = Object.entries(catTotals).sort((a,b) => b[1]-a[1]);
-  const transactionCategories = useMemo(() => Array.from(new Set(txs.map(t => t.category))).sort((a, b) => a.localeCompare(b, "zh-TW")), [txs]);
+  const transactionCategories = categories;
   const shown = useMemo(() => txs.filter(t => (filter === "全部" || t.type === filter) && (categoryFilter === "全部分類" || t.category === categoryFilter)), [txs, filter, categoryFilter]);
   const shownSummary = useMemo(() => {
     const income = shown.filter(t => t.type === "income").reduce((sum, item) => sum + item.amount, 0);
@@ -100,7 +102,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const type = fd.get("type") as "expense" | "income";
-    const candidate = { title: String(fd.get("title")), category: type === "income" ? "收入" : String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳" };
+    const candidate = { title: String(fd.get("title")), category: String(fd.get("category")), amount: Number(fd.get("amount")), date: String(fd.get("date")), type, source: "手動記帳" };
     let created: Tx = { id: Date.now(), ...candidate };
     if (pythonApiUrl) {
       const response = await fetch(`${pythonApiUrl}/transactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
@@ -192,12 +194,12 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
         <a className={`nav ${view === "analysis" ? "active" : ""}`} href="/analysis"><Icon name="home" />財務分析</a>
         <button className="nav" onClick={() => setModal("import")}><Icon name="sync" />資料匯入</button>
       </nav>
-      <div className="privacy"><span>●</span><div><b>{pythonApiUrl ? "已連接本機 SQL Server" : "資料僅存在此裝置"}</b><small>{pythonApiUrl ? "交易由本機 Python API 保存" : "SelfBank 不會上傳你的財務資料"}</small></div></div>
+        <div className="privacy"><span>●</span><div><b>{apiConnected ? "已連接本機 SQL Server" : pythonApiUrl ? "本機 API 尚未連線" : "資料僅存在此裝置"}</b><small>{apiConnected ? "交易由本機 Python API 保存" : pythonApiUrl ? "啟動網站服務後會自動重新連線" : "SelfBank 不會上傳你的財務資料"}</small></div></div>
       <div className="profile"><div className="avatar">我</div><div><b>我的帳本</b><small>個人模式</small></div><button aria-label="更多選項">•••</button></div>
     </aside>
 
     <main>
-      <header><div><p className="eyebrow">SelfBank · 2026 年 8 月</p><h1>{pageMeta[0]}</h1><p className="page-description">{pageMeta[1]}</p></div><div className="header-actions"><button className="circle" aria-label="通知"><Icon name="bell" /></button>{view === "transactions" && <button className="primary" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button>}{view === "recurring" && <button className="primary" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button>}</div></header>
+      <header><div><p className="eyebrow">SelfBank · 2026 年 8 月</p><h1>{pageMeta[0]}</h1><p className="page-description">{pageMeta[1]}</p></div>{view === "recurring" && <div className="header-actions"><button className="primary" onClick={() => setModal("recurring")}><Icon name="plus" />新增固定收支</button></div>}</header>
       {view === "analysis" && <>
       <section className="anomaly-panel"><div className="anomaly-title"><span>⚠</span><div><p className="eyebrow">主動偵測</p><h2>本月財務異常</h2></div></div><div className="anomaly-grid"><div><b>{topExpenseCategory?.[0] || "尚無支出"}支出 {money(topExpenseCategory?.[1] || 0)}</b><span>{topExpenseCategory ? "目前為本月最高支出分類" : "新增交易後開始分析"}</span></div><div><b>可變支出占預估總支出 {variableShare}%</b><span>{variableShare >= 70 ? "占比偏高，建議檢查非固定消費" : "目前仍在可控範圍"}</span></div><div><b>預估月底總支出 {money(projectedExpense)}</b><span>包含目前支出與尚未入帳的固定支出</span></div><div><b>近 6 個月比較：資料累積中</b><span>資料滿 6 個月後啟用平均、次數與連續上升警示</span></div></div></section>
       <section className="hero-card">
@@ -228,7 +230,7 @@ export function SelfBankApp({ view = "transactions" }: { view?: "transactions" |
       {view === "transactions" && <section className="panel transactions page-panel" id="transactions"><div className="ledger-head"><div><p className="eyebrow">交易紀錄</p><h3>所有支出與收入</h3><span>共 {shown.length} 筆符合目前條件</span></div><div className="ledger-actions"><button className="secondary compact" onClick={exportPdf} aria-label="匯出交易紀錄 PDF"><span aria-hidden="true">⇩</span>匯出 PDF</button><button className="primary compact" onClick={() => setModal("add")}><Icon name="plus" />新增交易</button></div></div>
         <div className="ledger-controls" aria-label="交易篩選"><div className="filters" aria-label="收支類型">{[["全部收支","全部"],["只看支出","expense"],["只看收入","income"]].map(([label,value])=><button key={value} className={filter===value?"selected":""} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label>分類<select aria-label="交易分類" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option>全部分類</option>{transactionCategories.map(category => <option key={category}>{category}</option>)}</select></label></div>
         <div className="ledger-summary"><div><span>篩選後收入</span><strong className="income">+{money(shownSummary.income)}</strong></div><div><span>篩選後支出</span><strong>−{money(shownSummary.expense)}</strong></div><div><span>收支差額</span><strong className={shownSummary.net >= 0 ? "income" : ""}>{shownSummary.net >= 0 ? "+" : "−"}{money(Math.abs(shownSummary.net))}</strong></div></div>
-        <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>帳務日期</th><th>交易時間</th><th>摘要</th><th>支出金額</th><th>存入金額</th><th>即時餘額</th><th>附註</th></tr></thead><tbody>{shown.map(t=><tr key={t.id}><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.transaction_time || "—"}</td><td><b>{t.summary || t.title}</b><small>{t.category} · {t.source}</small></td><td className="expense-cell">{t.type === "expense" ? money(t.expense_amount ?? t.amount) : "—"}</td><td className="income-cell">{t.type === "income" ? money(t.income_amount ?? t.amount) : "—"}</td><td>{t.balance == null ? "—" : money(t.balance)}</td><td>{t.note || (t.summary ? t.title : "—")}</td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
+        <div className="bank-table-wrap" aria-live="polite">{shown.length ? <table className="bank-table"><thead><tr><th>類型</th><th>名稱</th><th>金額</th><th>日期</th><th>分類</th></tr></thead><tbody>{shown.map(t=><tr key={t.id}><td><span className={`type-badge ${t.type}`}>{t.type === "income" ? "收入" : "支出"}</span></td><td><b>{t.title}</b></td><td className={t.type === "income" ? "income-cell" : "expense-cell"}>{t.type === "income" ? "+" : "−"}{money(t.amount)}</td><td><time dateTime={t.date}>{t.date.replaceAll("-","/")}</time></td><td>{t.category}</td></tr>)}</tbody></table> : <div className="empty-ledger"><b>沒有符合條件的交易</b><span>請調整收支類型或分類篩選。</span></div>}</div>
       </section>}
       <footer>SelfBank v1 · 個人財務資料，安心留在自己的裝置</footer>
     </main>

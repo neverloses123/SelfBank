@@ -48,36 +48,26 @@ def build_transactions_pdf(transactions: list[dict[str, Any]]) -> bytes:
     cell_style = ParagraphStyle("CellTC", parent=styles["Normal"], fontName=FONT_NAME, fontSize=7.2, leading=9)
     header_style = ParagraphStyle("HeaderTC", parent=cell_style, textColor=colors.white, alignment=TA_CENTER)
 
-    headers = ["帳務日期", "交易時間", "摘要", "支出金額", "存入金額", "即時餘額", "附註"]
+    headers = ["類型", "名稱", "金額", "日期", "分類"]
     rows = [[Paragraph(header, header_style) for header in headers]]
     for item in transactions:
-        summary = item.get("summary") or item.get("title")
-        expense = item.get("expense_amount") if item.get("type") == "expense" else None
-        income = item.get("income_amount") if item.get("type") == "income" else None
-        if expense is None and item.get("type") == "expense":
-            expense = item.get("amount")
-        if income is None and item.get("type") == "income":
-            income = item.get("amount")
-        note = item.get("note") or (item.get("title") if item.get("summary") else "-")
         rows.append([
+            Paragraph("收入" if item.get("type") == "income" else "支出", cell_style),
+            Paragraph(_text(item.get("title")), cell_style),
+            Paragraph(("+" if item.get("type") == "income" else "-") + _money(item.get("amount")), cell_style),
             Paragraph(_text(item.get("date")), cell_style),
-            Paragraph(_text(item.get("transaction_time")), cell_style),
-            Paragraph(_text(summary), cell_style),
-            Paragraph(_money(expense), cell_style),
-            Paragraph(_money(income), cell_style),
-            Paragraph(_money(item.get("balance")), cell_style),
-            Paragraph(_text(note), cell_style),
+            Paragraph(_text(item.get("category")), cell_style),
         ])
 
     if len(rows) == 1:
-        rows.append([Paragraph("目前沒有交易紀錄", cell_style), "", "", "", "", "", ""])
+        rows.append([Paragraph("目前沒有交易紀錄", cell_style), "", "", "", ""])
 
-    table = Table(rows, repeatRows=1, colWidths=[24 * mm, 39 * mm, 35 * mm, 27 * mm, 27 * mm, 29 * mm, 76 * mm])
+    table = Table(rows, repeatRows=1, colWidths=[30 * mm, 80 * mm, 45 * mm, 45 * mm, 50 * mm])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f6b4f")),
         ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cfdad4")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (3, 1), (5, -1), "RIGHT"),
+        ("ALIGN", (2, 1), (2, -1), "RIGHT"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f6faf7")]),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),

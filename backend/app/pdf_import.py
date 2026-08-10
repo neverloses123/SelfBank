@@ -71,7 +71,7 @@ def parse_fubon_tables(tables: list[list[list[Any]]]) -> list[dict[str, Any]]:
             transactions.append(
                 {
                     "title": title or "未命名交易",
-                    "category": "其他",
+                    "category": "日用品",
                     "amount": expense if is_expense else income,
                     "date": datetime.strptime(raw_date, "%Y/%m/%d").date().isoformat(),
                     "type": "expense" if is_expense else "income",
@@ -109,7 +109,7 @@ def parse_statement_text(text: str) -> list[dict[str, Any]]:
         transactions.append(
             {
                 "title": title.strip(),
-                "category": "其他",
+                "category": "日用品",
                 "amount": abs(amount),
                 "date": parsed_date,
                 "type": "expense" if amount < 0 else "income",

@@ -74,6 +74,16 @@ def transactions(limit: int = Query(default=200, ge=1, le=1000)) -> list[dict]:
     return database.list_transactions(limit)
 
 
+@app.get("/categories")
+def categories() -> list[dict]:
+    return database.list_categories()
+
+
+@app.get("/transaction-types")
+def transaction_types() -> list[dict]:
+    return database.list_transaction_types()
+
+
 @app.post("/transactions", status_code=201)
 def create_transaction(payload: TransactionInput) -> dict:
     return database.create_transaction(payload.model_dump())

@@ -48,3 +48,7 @@ class DatabaseTests(TestCase):
         self.assertEqual(transaction["summary"], "刷卡消費")
         self.assertEqual(transaction["balance"], 465024)
         self.assertEqual(transaction["note"], "義美股份有限公司")
+
+    def test_reference_tables_have_requested_values(self) -> None:
+        self.assertEqual([row["name"] for row in self.db.list_categories()], ["餐飲", "日用品", "娛樂", "交通", "股票", "醫療"])
+        self.assertEqual([row["name"] for row in self.db.list_transaction_types()], ["收入", "支出"])

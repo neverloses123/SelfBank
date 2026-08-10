@@ -28,6 +28,15 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_match ON transactions(type, amount, transaction_date);
+CREATE TABLE IF NOT EXISTS transaction_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS transaction_types (
+    code TEXT PRIMARY KEY CHECK (code IN ('income', 'expense')),
+    name TEXT NOT NULL UNIQUE
+);
 CREATE TABLE IF NOT EXISTS recurring_payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -70,6 +79,17 @@ class Database:
             for name, column_type in (("transaction_time", "TEXT"), ("summary", "TEXT"), ("expense_amount", "REAL"), ("income_amount", "REAL"), ("balance", "REAL"), ("note", "TEXT")):
                 if name not in transaction_columns:
                     connection.execute(f"ALTER TABLE transactions ADD COLUMN {name} {column_type}")
+            connection.executemany(
+                "INSERT OR IGNORE INTO transaction_categories(name, sort_order) VALUES (?, ?)",
+                [(name, index) for index, name in enumerate(("餐飲", "日用品", "娛樂", "交通", "股票", "醫療"), start=1)],
+            )
+            connection.executemany(
+                "INSERT OR IGNORE INTO transaction_types(code, name) VALUES (?, ?)",
+                [("income", "收入"), ("expense", "支出")],
+            )
+            connection.execute("UPDATE transactions SET category = '日用品' WHERE category IN ('日常採買', '帳單', '其他')")
+            connection.execute("UPDATE transactions SET category = '娛樂' WHERE category = '學習'")
+            connection.execute("UPDATE transactions SET category = '股票' WHERE category = '收入'")
             connection.execute("PRAGMA optimize")
 
     def list_transactions(self, limit: int = 200) -> list[dict[str, Any]]:
@@ -78,6 +98,16 @@ class Database:
                 "SELECT id, title, category, amount, transaction_date AS date, type, source, transaction_time, summary, expense_amount, income_amount, balance, note FROM transactions ORDER BY transaction_date DESC, transaction_time DESC, id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_categories(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute("SELECT id, name, sort_order FROM transaction_categories ORDER BY sort_order").fetchall()
+        return [dict(row) for row in rows]
+
+    def list_transaction_types(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute("SELECT code, name FROM transaction_types ORDER BY CASE code WHEN 'income' THEN 1 ELSE 2 END").fetchall()
         return [dict(row) for row in rows]
 
     def create_transaction(self, transaction: dict[str, Any]) -> dict[str, Any]:

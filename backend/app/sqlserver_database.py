@@ -34,6 +34,28 @@ IF COL_LENGTH('dbo.transactions', 'expense_amount') IS NULL ALTER TABLE dbo.tran
 IF COL_LENGTH('dbo.transactions', 'income_amount') IS NULL ALTER TABLE dbo.transactions ADD income_amount DECIMAL(18,2) NULL;
 IF COL_LENGTH('dbo.transactions', 'balance') IS NULL ALTER TABLE dbo.transactions ADD balance DECIMAL(18,2) NULL;
 IF COL_LENGTH('dbo.transactions', 'note') IS NULL ALTER TABLE dbo.transactions ADD note NVARCHAR(200) NULL;
+IF OBJECT_ID('dbo.transaction_categories', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.transaction_categories (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        name NVARCHAR(40) NOT NULL UNIQUE,
+        sort_order TINYINT NOT NULL UNIQUE
+    );
+END;
+IF OBJECT_ID('dbo.transaction_types', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.transaction_types (
+        code VARCHAR(10) PRIMARY KEY CHECK (code IN ('income', 'expense')),
+        name NVARCHAR(10) NOT NULL UNIQUE
+    );
+END;
+IF NOT EXISTS (SELECT 1 FROM dbo.transaction_categories)
+    INSERT INTO dbo.transaction_categories(name, sort_order) VALUES (N'餐飲',1),(N'日用品',2),(N'娛樂',3),(N'交通',4),(N'股票',5),(N'醫療',6);
+IF NOT EXISTS (SELECT 1 FROM dbo.transaction_types)
+    INSERT INTO dbo.transaction_types(code, name) VALUES ('income',N'收入'),('expense',N'支出');
+UPDATE dbo.transactions SET category = N'日用品' WHERE category IN (N'日常採買', N'帳單', N'其他');
+UPDATE dbo.transactions SET category = N'娛樂' WHERE category = N'學習';
+UPDATE dbo.transactions SET category = N'股票' WHERE category = N'收入';
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_transactions_date' AND object_id = OBJECT_ID('dbo.transactions'))
     CREATE INDEX idx_transactions_date ON dbo.transactions(transaction_date DESC);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_transactions_match' AND object_id = OBJECT_ID('dbo.transactions'))
@@ -99,6 +121,16 @@ class SqlServerDatabase(Database):
             )
             row = cursor.fetchone()
             return dict(zip(("id", "title", "category", "amount", "date", "type", "source", "transaction_time", "summary", "expense_amount", "income_amount", "balance", "note"), row))
+
+    def list_categories(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            cursor = connection.execute("SELECT id, name, sort_order FROM dbo.transaction_categories ORDER BY sort_order")
+            return [self._dict(cursor, row) for row in cursor.fetchall()]
+
+    def list_transaction_types(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            cursor = connection.execute("SELECT code, name FROM dbo.transaction_types ORDER BY CASE code WHEN 'income' THEN 1 ELSE 2 END")
+            return [self._dict(cursor, row) for row in cursor.fetchall()]
 
     def list_recurring(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
