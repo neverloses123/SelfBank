@@ -4,6 +4,7 @@ import base64
 import binascii
 import os
 import io
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -75,7 +76,7 @@ else:
 app = FastAPI(title="SelfBank API", version="1.0.0", docs_url="/docs")
 
 origins = [origin.strip() for origin in os.getenv("SELFBANK_CORS_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=["GET", "POST", "PATCH"], allow_headers=["Content-Type"])
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False, allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type"])
 
 
 def require_database():
@@ -121,6 +122,14 @@ def update_transaction(item_id: int, payload: TransactionUpdate) -> dict:
     if updated is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return updated
+
+
+@app.delete("/transactions/outside-range")
+def prune_transactions(from_date: date, to_date: date) -> dict[str, int | str]:
+    if from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must not be after to_date")
+    deleted = require_database().prune_transactions(from_date.isoformat(), to_date.isoformat())
+    return {"deleted_count": deleted, "retained_from": from_date.isoformat(), "retained_to": to_date.isoformat()}
 
 
 @app.post("/imports/pdf")
@@ -171,3 +180,10 @@ def update_recurring(item_id: int, active: bool) -> dict[str, bool]:
     if not require_database().set_recurring_active(item_id, active):
         raise HTTPException(status_code=404, detail="Recurring payment not found")
     return {"updated": True}
+
+
+@app.delete("/recurring/{item_id}")
+def delete_recurring(item_id: int) -> dict[str, bool]:
+    if not require_database().delete_recurring(item_id):
+        raise HTTPException(status_code=404, detail="Recurring payment not found")
+    return {"deleted": True}

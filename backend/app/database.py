@@ -105,6 +105,14 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def prune_transactions(self, from_date: str, to_date: str) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM transactions WHERE transaction_date < ? OR transaction_date > ?",
+                (from_date, to_date),
+            )
+        return cursor.rowcount
+
     def list_categories(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
             rows = connection.execute("SELECT id, name, sort_order FROM transaction_categories ORDER BY sort_order").fetchall()
@@ -178,4 +186,9 @@ class Database:
     def set_recurring_active(self, item_id: int, active: bool) -> bool:
         with self.connect() as connection:
             cursor = connection.execute("UPDATE recurring_payments SET active = ? WHERE id = ?", (int(active), item_id))
+        return cursor.rowcount == 1
+
+    def delete_recurring(self, item_id: int) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute("DELETE FROM recurring_payments WHERE id = ?", (item_id,))
         return cursor.rowcount == 1

@@ -198,6 +198,14 @@ class SqlServerDatabase(Database):
             )
             return [self._dict(cursor, row) for row in cursor.fetchall()]
 
+    def prune_transactions(self, from_date: str, to_date: str) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM dbo.transactions WHERE transaction_date < ? OR transaction_date > ?",
+                from_date, to_date,
+            )
+            return cursor.rowcount
+
     def create_transaction(self, transaction: dict[str, Any]) -> dict[str, Any]:
         with self.connect() as connection:
             cursor = connection.execute(
@@ -253,4 +261,9 @@ class SqlServerDatabase(Database):
     def set_recurring_active(self, item_id: int, active: bool) -> bool:
         with self.connect() as connection:
             cursor = connection.execute("UPDATE dbo.recurring_payments SET active = ? WHERE id = ?", bool(active), item_id)
+            return cursor.rowcount == 1
+
+    def delete_recurring(self, item_id: int) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute("DELETE FROM dbo.recurring_payments WHERE id = ?", item_id)
             return cursor.rowcount == 1

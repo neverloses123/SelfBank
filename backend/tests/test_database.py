@@ -28,6 +28,12 @@ class DatabaseTests(TestCase):
         self.assertEqual(second["created_count"], 0)
         self.assertEqual(second["skipped_count"], 1)
 
+    def test_transactions_can_be_pruned_to_date_range(self) -> None:
+        for date_value in ("2026-06-30", "2026-07-01", "2026-08-10", "2026-08-11"):
+            self.db.create_transaction({"title": date_value, "category": "餐飲", "amount": 1, "date": date_value, "type": "expense", "source": "測試"})
+        self.assertEqual(self.db.prune_transactions("2026-07-01", "2026-08-10"), 2)
+        self.assertEqual([row["date"] for row in self.db.list_transactions()], ["2026-08-10", "2026-07-01"])
+
     def test_recurring_payment_lifecycle(self) -> None:
         item = self.db.create_recurring({"title": "手機月租", "category": "帳單", "amount": 599, "day": 20, "type": "expense", "active": True})
         income = self.db.create_recurring({"title": "每月薪資", "category": "收入", "amount": 62000, "day": 8, "type": "income", "active": True})
@@ -36,6 +42,9 @@ class DatabaseTests(TestCase):
         self.assertTrue(item["active"])
         self.assertTrue(self.db.set_recurring_active(item["id"], False))
         self.assertTrue(any(not row["active"] for row in self.db.list_recurring()))
+        self.assertTrue(self.db.delete_recurring(item["id"]))
+        self.assertFalse(any(row["id"] == item["id"] for row in self.db.list_recurring()))
+        self.assertFalse(self.db.delete_recurring(item["id"]))
 
     def test_pdf_columns_are_persisted(self) -> None:
         transaction = self.db.create_transaction({

@@ -48,6 +48,9 @@ test("固定收支與財務分析為獨立頁面", async () => {
   assert.match(css, /--green:#0085ca/);
   assert.match(css, /linear-gradient\(115deg,#0085ca,#0067a0\)/);
   assert.match(css, /font-variant-numeric:tabular-nums lining-nums/);
+  assert.match(page, /method: "DELETE"/);
+  assert.match(page, /不納入計算/);
+  assert.match(css, /\.recurring-item\.paused/);
 });
 
 test("交易紀錄支援收支與分類交叉篩選", async () => {
@@ -61,10 +64,11 @@ test("交易紀錄支援收支與分類交叉篩選", async () => {
   for (const text of ["備註", "編輯交易", "儲存修改", "交易只提供編輯，不提供刪除功能"]) assert.match(page, new RegExp(text));
   assert.match(page, /method: "PATCH"/);
   assert.match(page, /\/transactions\/\$\{editingTx\.id\}/);
-  assert.doesNotMatch(page, /method: "DELETE"|刪除交易/);
+  assert.doesNotMatch(page, /刪除交易/);
   const api = await readFile(new URL("../backend/app/main.py", import.meta.url), "utf8");
   assert.match(api, /@app\.patch\("\/transactions\/\{item_id\}"\)/);
-  assert.doesNotMatch(api, /@app\.delete/);
+  assert.doesNotMatch(api, /@app\.delete\("\/transactions\/\{item_id\}"\)/);
+  assert.match(api, /@app\.delete\("\/recurring\/\{item_id\}"\)/);
   assert.match(page, /const PAGE_SIZE = 10/);
   assert.match(page, /pageTransactions/);
   assert.match(page, /每頁 10 筆/);
